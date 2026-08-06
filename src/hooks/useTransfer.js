@@ -202,9 +202,11 @@ export function useTransfer() {
       }
     } catch (err) {
       console.error('Portal creation error:', err);
-      setError('Couldn\'t open portal. We couldn\'t create a temporary session.');
+      const detail = err?.message || 'We couldn\'t create a temporary session.';
+      setError(`Couldn't open portal. ${detail}`);
       setStatus('FAILED');
     }
+
   }
 
   const cancelTransfer = useCallback(() => {
