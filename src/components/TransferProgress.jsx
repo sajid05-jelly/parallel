@@ -40,17 +40,18 @@ const TransferProgress = ({ progress = {}, direction = 'sending', status }) => {
 
         <div className="flex justify-between w-full text-sm mb-6">
           <span className="text-white font-medium">{(Number(percentage) || 0).toFixed(1)}%</span>
-          {!isComplete && <span className="text-gray-400">{speed}</span>}
+          {!isComplete && <span className="text-gray-400">{typeof speed === 'number' ? `${(speed / (1024 * 1024)).toFixed(1)} MB/s` : (speed || '0 MB/s')}</span>}
         </div>
 
 
         <p className="text-gray-300 text-sm mb-1">
-          {direction === 'sending' ? 'Sending' : 'Receiving'} {currentFile} / {totalFiles} files
+          {direction === 'sending' ? 'Sending' : 'Receiving'} {typeof currentFile === 'object' && currentFile !== null ? (currentFile.name || 1) : (currentFile || 1)} / {totalFiles} files
         </p>
+
         
         {!isComplete && (
           <p className="text-gray-500 text-xs">
-            {eta}
+            {typeof eta === 'number' ? `${Math.ceil(eta)}s remaining` : (eta || 'Calculating...')}
           </p>
         )}
 
