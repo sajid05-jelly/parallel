@@ -151,14 +151,15 @@ export class WebRTCTransport {
 
     this._updateStatus('WAITING');
 
-    // 15-second connection timeout trigger
+    // 30-second debug connection timeout trigger
     this._connectionTimeout = setTimeout(() => {
       if (this.status !== 'CONNECTED' && this.status !== 'TRANSFERRING' && this.status !== 'COMPLETED') {
-        console.warn('[WebRTCTransport] Connection timed out after 15s');
-        this.onError(new Error('Couldn\'t establish connection. Connection timed out after 15s.'));
+        console.warn('[WebRTCTransport] Connection timed out after 30s');
+        this.onError(new Error('Couldn\'t establish connection. Connection timed out after 30s. Check your network or firewall settings.'));
         this._updateStatus('FAILED');
       }
-    }, 15000);
+    }, 30000);
+
 
     const origin = window.location.origin;
     const url = `${origin}/receive/${this.token}#key=${this.keyString}`;

@@ -107,14 +107,15 @@ export class WebRTCReceiverTransport {
     // Notify sender that receiver claimed the portal
     await this.signaling.sendSignal('RECEIVER_CLAIMED', { credential: receiverCredential });
 
-    // 15-second connection timeout trigger
+    // 30-second debug connection timeout trigger
     this._connectionTimeout = setTimeout(() => {
       if (this.status !== 'CONNECTED' && this.status !== 'TRANSFERRING' && this.status !== 'COMPLETED') {
-        console.warn('[ReceiverTransport] Connection timed out after 15s');
-        this.onError(new Error('Couldn\'t establish connection. Connection timed out after 15s.'));
+        console.warn('[ReceiverTransport] Connection timed out after 30s');
+        this.onError(new Error('Couldn\'t establish connection. Connection timed out after 30s. Check your network or firewall settings.'));
         this._updateStatus('FAILED');
       }
-    }, 15000);
+    }, 30000);
+
 
     return { session: this.session };
   }

@@ -43,14 +43,20 @@ export class SupabaseSignaling {
       console.log(`[Signaling] Subscribing to Supabase Realtime channel: ${this.channelName}`);
       this.supabaseChannel = supabase.channel(this.channelName);
 
-      this.supabaseChannel
-        .on('broadcast', { event: 'signal' }, ({ payload }) => {
-          this._handleSignalPayload(payload);
-        })
-        .subscribe((status) => {
-          console.log(`[Signaling] Supabase Realtime channel status: ${status}`);
-        });
+      return new Promise((resolve) => {
+        this.supabaseChannel
+          .on('broadcast', { event: 'signal' }, ({ payload }) => {
+            this._handleSignalPayload(payload);
+          })
+          .subscribe((status) => {
+            console.log(`[Signaling] Supabase Realtime channel status for ${this.peerRole}: ${status}`);
+            if (status === 'SUBSCRIBED') {
+              resolve(true);
+            }
+          });
+      });
     } else {
+
       console.log(`[Signaling] Using BroadcastChannel / Local fallback for channel: ${this.channelName}`);
       try {
         if ('BroadcastChannel' in window) {
