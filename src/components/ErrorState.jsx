@@ -22,11 +22,12 @@ const getErrorDetails = (type, customMessage, customDescription, customActionLab
       icon: '📡'
     },
     'upload_failed': {
-      message: 'Upload failed',
-      description: 'There was a problem uploading your files.',
+      message: 'Connection failed',
+      description: 'The connection between the devices was interrupted.',
       actionLabel: 'Retry',
       icon: '⚠️'
     },
+
     'file_too_large': {
       message: 'Files are too large',
       description: 'The selected files exceed the size limit.',

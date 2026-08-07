@@ -179,9 +179,10 @@ export function useTransfer() {
         onStatusChange: (newStatus) => setStatus(newStatus),
         onError: (err) => {
           console.error('[useTransfer] Transport error:', err);
-          setError('Transfer couldn\'t be completed. Connection interrupted.');
+          setError(err?.message || 'The connection between the devices was interrupted.');
           setStatus('FAILED');
         },
+
         onComplete: () => {
           setStatus('COMPLETED');
         }

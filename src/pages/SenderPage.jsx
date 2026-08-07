@@ -152,7 +152,7 @@ export default function SenderPage() {
     }
 
     if (status === 'EXPIRED' || status === 'CANCELLED' || status === 'FAILED') {
-      const errorType = status === 'EXPIRED' ? 'expired' : status === 'CANCELLED' ? 'generic' : 'upload_failed';
+      const errorType = status === 'EXPIRED' ? 'expired' : 'generic';
       return (
         <motion.div
           key="error"
@@ -164,6 +164,7 @@ export default function SenderPage() {
         </motion.div>
       );
     }
+
 
     return null;
   };
