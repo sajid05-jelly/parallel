@@ -96,7 +96,7 @@ export default function SenderPage() {
       }
     }
 
-    if (status === 'WAITING') {
+    if (status === 'WAITING' || status === 'CONNECTED') {
       return (
         <motion.div
           key="waiting"
@@ -110,13 +110,13 @@ export default function SenderPage() {
             totalSize={totalSize} 
             expiryDate={qrExpiry} 
             onCancel={cancelTransfer}
-            status="WAITING"
+            status={status}
           />
         </motion.div>
       );
     }
 
-    if (status === 'CONNECTED' || status === 'TRANSFERRING') {
+    if (status === 'TRANSFERRING') {
       return (
         <motion.div
           key="transferring"
@@ -128,6 +128,7 @@ export default function SenderPage() {
         </motion.div>
       );
     }
+
 
     if (status === 'COMPLETED') {
       return (

@@ -39,9 +39,10 @@ const TransferProgress = ({ progress = {}, direction = 'sending', status }) => {
         </div>
 
         <div className="flex justify-between w-full text-sm mb-6">
-          <span className="text-white font-medium">{percentage.toFixed(1)}%</span>
+          <span className="text-white font-medium">{(Number(percentage) || 0).toFixed(1)}%</span>
           {!isComplete && <span className="text-gray-400">{speed}</span>}
         </div>
+
 
         <p className="text-gray-300 text-sm mb-1">
           {direction === 'sending' ? 'Sending' : 'Receiving'} {currentFile} / {totalFiles} files
