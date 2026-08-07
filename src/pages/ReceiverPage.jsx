@@ -145,11 +145,17 @@ export default function ReceiverPage({ token, keyString }) {
                   </svg>
                 </motion.div>
                 <h2 className="text-3xl font-light mb-2 text-[#F5F5F2]">Everything arrived.</h2>
-                <p className="text-[#9CA3A2]">{files.length} {files.length === 1 ? 'file' : 'files'} received successfully.</p>
-                <p className="text-xs text-[#5C6462] mt-6">Files saved to your downloads.</p>
+                <p className="text-xs text-[#5C6462] mt-4 mb-6">Files saved to your downloads.</p>
+                <button 
+                  onClick={() => window.location.href = '/'}
+                  className="w-full py-3 rounded-xl bg-white/10 hover:bg-white/20 text-[#F5F5F2] font-medium text-sm transition-colors"
+                >
+                  Done
+                </button>
               </GlassCard>
             </motion.div>
           )}
+
 
           {status === 'NOT_FOUND' && (
             <motion.div key="not_found" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="w-full max-w-md mx-auto">

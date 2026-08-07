@@ -306,9 +306,23 @@ export class WebRTCReceiverTransport {
     const fileRecord = this.receivedFiles.get(fileId);
     if (!fileRecord) return;
 
-    const { info, chunks } = fileRecord;
-    const sortedChunks = [];
+    const { info, chunks, receivedBytes } = fileRecord;
+    
+    // Integrity check 1: Ensure total chunk count matches expected count
+    if (chunks.size !== info.totalChunks) {
+      console.error(`[ReceiverTransport] Integrity check failed for ${info.name}: Chunks received (${chunks.size}) != expected (${info.totalChunks})`);
+      this.onError(new Error(`Transfer incomplete for ${info.name}. Missing chunks.`));
+      return;
+    }
 
+    // Integrity check 2: Ensure received total bytes exactly match original file size
+    if (receivedBytes !== info.size) {
+      console.error(`[ReceiverTransport] Integrity check failed for ${info.name}: Received bytes (${receivedBytes}) != expected (${info.size})`);
+      this.onError(new Error(`Transfer incomplete for ${info.name}. Byte size mismatch.`));
+      return;
+    }
+
+    const sortedChunks = [];
     for (let i = 0; i < info.totalChunks; i++) {
       const chunk = chunks.get(i);
       if (chunk) sortedChunks.push(chunk);
@@ -316,6 +330,15 @@ export class WebRTCReceiverTransport {
 
     const mimeType = info.type || 'application/octet-stream';
     const blob = new Blob(sortedChunks, { type: mimeType });
+    
+    // Additional Blob size verification
+    if (blob.size !== info.size) {
+      console.error(`[ReceiverTransport] Blob size verification failed for ${info.name}: Blob size (${blob.size}) != expected (${info.size})`);
+      this.onError(new Error(`Transfer incomplete for ${info.name}. Corrupted binary assembly.`));
+      return;
+    }
+
+    console.log(`[ReceiverTransport] File integrity verified 100% for ${info.name} (${blob.size} bytes)`);
     const file = new File([blob], info.name, { type: mimeType, lastModified: Date.now() });
 
     if (!this.completedFiles) this.completedFiles = [];
@@ -326,6 +349,7 @@ export class WebRTCReceiverTransport {
     // Free memory for raw chunks immediately
     this.receivedFiles.delete(fileId);
   }
+
 
   async _triggerBrowserDownload(blob, filename, fileObj) {
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);

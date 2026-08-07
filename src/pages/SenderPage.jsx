@@ -144,9 +144,10 @@ export default function SenderPage() {
           </div>
           <h2 className="text-3xl font-medium text-[#F5F5F2] mb-4">Delivered.</h2>
           <p className="text-[#9CA3A2] mb-8">Your files have been securely transferred.</p>
-          <button onClick={reset} className="px-8 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-colors font-medium">
-            Create another portal
+          <button onClick={reset} className="px-8 py-3 bg-gradient-to-r from-[#D4A574] via-[#9CA3A2] to-[#5BA5A5] hover:opacity-95 text-[#090A0A] font-semibold rounded-xl transition-all active:scale-95 text-sm uppercase tracking-wide">
+            Send Another
           </button>
+
         </motion.div>
       );
     }
