@@ -19,12 +19,9 @@ export async function hashString(str) {
 const isSupabaseConfigured = () => {
   const url = import.meta.env.VITE_SUPABASE_URL;
   const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
-  if (!url || !key) return false;
-  const u = url.trim();
-  const k = key.trim();
-  if (u.includes('placeholder.supabase.co') || k.includes('placeholder-key')) return false;
-  return Boolean(u.startsWith('http://') || u.startsWith('https://'));
+  return Boolean(url && key);
 };
+
 
 
 export async function generateToken() {
