@@ -47,17 +47,18 @@ export default function SenderPage() {
             className="w-full"
           >
             <div className="text-center mb-10">
-              <span className="text-[11px] tracking-[0.35em] text-[#D4A574] font-mono uppercase mb-4 inline-block px-3 py-1 rounded-full border border-[#D4A574]/20 bg-[#D4A574]/5">
-                ENCRYPTED · TEMPORARY · DIRECT P2P
+              <span className="text-xs tracking-[0.25em] text-[#5C6462] font-mono uppercase mb-4 inline-block">
+                Private · Temporary · Instant
               </span>
-              <h1 className="font-syne text-4xl md:text-5xl lg:text-6xl font-bold text-[#F5F5F2] leading-[1.1] tracking-tight">
+              <h1 className="font-space text-4xl md:text-5xl lg:text-6xl font-medium text-[#F5F5F2] leading-tight tracking-tight">
                 Send anything.<br/>
-                Through a temporary <span className="text-gradient-portal font-extrabold">portal.</span>
+                Through a temporary <span className="text-gradient-portal font-semibold">portal.</span>
               </h1>
-              <p className="text-sm md:text-base text-[#9CA3A2] max-w-md mx-auto mt-5 font-normal leading-relaxed">
-                Direct device-to-device file transfer. No file size limits, zero cloud storage, complete privacy.
+              <p className="text-sm md:text-base text-[#9CA3A2] max-w-md mx-auto mt-5 leading-relaxed">
+                Direct device-to-device file transfer. No account required, zero cloud storage, complete privacy.
               </p>
             </div>
+
 
             
             <div className="max-w-xl mx-auto">

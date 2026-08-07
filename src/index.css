@@ -46,7 +46,7 @@
   body {
     background-color: var(--bg-primary);
     color: var(--text-primary);
-    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     overflow-x: hidden;
@@ -57,9 +57,10 @@
 }
 
 @layer utilities {
-  .font-syne {
-    font-family: 'Syne', sans-serif;
+  .font-space {
+    font-family: 'Space Grotesk', sans-serif;
   }
+
   .glass-panel {
 
     background: var(--bg-glass);
