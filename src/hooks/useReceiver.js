@@ -58,14 +58,15 @@ export default function useReceiver() {
       } else if (msg.includes('CANCELLED')) {
         setStatus('CANCELLED');
         setError('The sender has closed this portal.');
-      } else if (msg.includes('NOT_FOUND') || msg.includes('not found') || msg.includes('single')) {
+      } else if (msg === 'NOT_FOUND') {
         setStatus('NOT_FOUND');
         setError('This portal does not exist.');
       } else {
         setStatus('ERROR');
-        setError('Could not establish device-to-device connection. Ensure VITE_SUPABASE_URL is set on Vercel.');
+        setError(msg || 'Could not establish connection. Check your internet connection.');
       }
     }
+
   }, []);
 
   const acceptTransfer = useCallback(() => {
