@@ -9,9 +9,11 @@ export const MESSAGE_TYPES = {
   FILE_START: 'FILE_START',
   FILE_END: 'FILE_END',
   TRANSFER_COMPLETE: 'TRANSFER_COMPLETE',
+  TRANSFER_COMPLETE_ACK: 'TRANSFER_COMPLETE_ACK',
   CANCEL: 'CANCEL',
   ERROR: 'ERROR'
 };
+
 
 /**
  * Encodes a JSON object control message as an ArrayBuffer/string payload.

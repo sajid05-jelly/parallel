@@ -186,12 +186,17 @@ export class WebRTCTransport {
       console.log(`[WebRTCTransport] PeerConnection state: ${state}, ICE state: ${iceState}`);
       if (state === 'connected') {
         if (this._connectionTimeout) clearTimeout(this._connectionTimeout);
-        this._updateStatus('CONNECTED');
+        if (this.status !== 'TRANSFERRING' && this.status !== 'COMPLETED') {
+          this._updateStatus('CONNECTED');
+        }
       } else if (state === 'failed') {
         if (this._connectionTimeout) clearTimeout(this._connectionTimeout);
-        this._updateStatus('FAILED');
+        if (!this.isCompleted && this.status !== 'COMPLETED') {
+          this._updateStatus('FAILED');
+        }
       }
     };
+
 
 
     // Sender creates DataChannel
@@ -252,11 +257,20 @@ export class WebRTCTransport {
       this.isTransferAccepted = true;
       this._updateStatus('TRANSFERRING');
       this._startFileStream();
+    } else if (msg.type === MESSAGE_TYPES.TRANSFER_COMPLETE_ACK) {
+      console.log('[WebRTCTransport] Received TRANSFER_COMPLETE_ACK from receiver. Finalizing transfer success.');
+      this.isCompleted = true;
+      if (this._connectionTimeout) clearTimeout(this._connectionTimeout);
+      this._updateStatus('COMPLETED');
+      this.onComplete({ token: this.token, keyString: this.keyString, sessionId: this.sessionId });
     } else if (msg.type === MESSAGE_TYPES.CANCEL) {
-      console.log('[WebRTCTransport] Receiver requested transfer cancellation');
-      this.cancelPortal();
+      if (!this.isCompleted && this.status !== 'COMPLETED') {
+        console.log('[WebRTCTransport] Receiver requested transfer cancellation');
+        this.cancelPortal();
+      }
     }
   }
+
 
   /**
    * Stream files with WebRTC Backpressure control & Slice Reading
