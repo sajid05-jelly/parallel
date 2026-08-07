@@ -42,22 +42,11 @@ export async function createSession({ totalFiles, totalBytes, oneReceiverMode = 
     const expiresAt = new Date(Date.now() + 120 * 1000).toISOString(); 
     
     if (!isSupabaseConfigured()) {
-      console.warn('[SessionManager] Supabase env variables not configured in Vercel. Falling back to local memory store.');
-      const session = {
-        id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 11),
-        token_hash: tokenHash,
-        status: 'WAITING',
-        expires_at: expiresAt,
-        one_receiver_mode: oneReceiverMode,
-        total_files: totalFiles,
-        total_bytes: totalBytes,
-        uploaded_bytes: 0,
-        downloaded_bytes: 0,
-        receiver_connected: false
-      };
-      memoryDB.set(tokenHash, session);
-      return { session, token, error: null };
+      const missingConfigErr = new Error('Supabase environment variables (VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY) are missing or invalid.');
+      console.error('[SessionManager]', missingConfigErr);
+      return { session: null, token: null, error: missingConfigErr };
     }
+
 
 
     const { supabase } = await import('../config/supabase');
@@ -100,12 +89,9 @@ export async function getSessionByToken(token) {
     const tokenHash = await hashString(cleanToken);
     
     if (!isSupabaseConfigured()) {
-      const session = memoryDB.get(tokenHash);
-      if (!session) {
-        return { session: null, error: new Error('NOT_FOUND') };
-      }
-      return { session, error: null };
+      return { session: null, error: new Error('Supabase environment variables missing in Vercel.') };
     }
+
 
 
     const { supabase } = await import('../config/supabase');
