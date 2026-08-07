@@ -35,25 +35,12 @@ export async function generateToken() {
 export async function createSession({ totalFiles, totalBytes, oneReceiverMode = true }) {
   try {
     const { token, tokenHash } = await generateToken();
-    // 2-minute connection countdown for receiver connection
     const expiresAt = new Date(Date.now() + 120 * 1000).toISOString(); 
     
     if (!isSupabaseConfigured()) {
-      console.warn('[SessionManager] Supabase credentials not set in environment. Using in-memory store.');
-      const session = {
-        id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 11),
-        token_hash: tokenHash,
-        status: 'WAITING',
-        expires_at: expiresAt,
-        one_receiver_mode: oneReceiverMode,
-        total_files: totalFiles,
-        total_bytes: totalBytes,
-        uploaded_bytes: 0,
-        downloaded_bytes: 0,
-        receiver_connected: false
-      };
-      memoryDB.set(tokenHash, session);
-      return { session, token, error: null };
+      const missingErr = new Error('Supabase environment variables (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY) are missing in Vercel settings.');
+      console.error('[SessionManager]', missingErr);
+      return { session: null, token: null, error: missingErr };
     }
 
     const { supabase } = await import('../config/supabase');
@@ -74,8 +61,8 @@ export async function createSession({ totalFiles, totalBytes, oneReceiverMode = 
       .single();
       
     if (error) {
-      console.error('[SessionManager] Supabase insert error:', error);
-      throw error;
+      console.error('[SessionManager] Supabase database INSERT error:', error);
+      throw new Error(`Database INSERT failed: ${error.message} (${error.code || 'RLS_OR_SCHEMA_ERROR'})`);
     }
     
     console.log('[SessionManager] Session created successfully in database:', session.id);
@@ -86,6 +73,7 @@ export async function createSession({ totalFiles, totalBytes, oneReceiverMode = 
   }
 }
 
+
 export async function getSessionByToken(token) {
   try {
     if (!token) return { session: null, error: new Error('No token provided') };
@@ -95,12 +83,7 @@ export async function getSessionByToken(token) {
     const tokenHash = await hashString(cleanToken);
     
     if (!isSupabaseConfigured()) {
-      const session = memoryDB.get(tokenHash);
-      if (!session) {
-        console.warn('[SessionManager] Memory session not found for token hash:', tokenHash);
-        return { session: null, error: new Error('Session not found') };
-      }
-      return { session, error: null };
+      return { session: null, error: new Error('SUPABASE_NOT_CONFIGURED: Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY') };
     }
 
     const { supabase } = await import('../config/supabase');
@@ -111,8 +94,14 @@ export async function getSessionByToken(token) {
       .single();
       
     if (error) {
-      console.error('[SessionManager] Supabase session lookup error:', error);
-      return { session: null, error };
+      console.error('[SessionManager] Supabase session SELECT error:', error);
+      if (error.code === 'PGRST116') { // PostgreSQL code for 0 rows returned
+        return { session: null, error: new Error('NOT_FOUND') };
+      }
+      if (error.code === '42501') { // RLS permission denied
+        return { session: null, error: new Error('PERMISSION_ERROR: RLS blocked query') };
+      }
+      return { session: null, error: new Error(`DATABASE_ERROR: ${error.message}`) };
     }
 
     // Check expiration only if receiver has not yet connected
@@ -128,6 +117,7 @@ export async function getSessionByToken(token) {
     return { session: null, error };
   }
 }
+
 
 export async function updateSession(sessionId, updates) {
   try {

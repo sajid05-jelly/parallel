@@ -109,12 +109,22 @@ const QRScreen = ({ transferUrl, fileCount, totalSize, expiryDate, onCopyLink, o
                 Cancel Portal
               </button>
             </div>
+
+            {process.env.NODE_ENV === 'development' && (
+              <div className="w-full mt-6 p-3 rounded-xl bg-black/40 border border-white/10 text-left text-xs space-y-1 font-mono text-[#9CA3A2]">
+                <div className="text-amber-400 font-bold mb-1">[DEV Session Debug]</div>
+                <div>Status: <span className="text-white">{status}</span></div>
+                <div>Remaining: <span className="text-white">{remaining}s</span></div>
+                <div>URL Origin: <span className="text-teal-400">{transferUrl ? new URL(transferUrl).origin : 'N/A'}</span></div>
+              </div>
+            )}
           </>
         )}
       </GlassCard>
     </div>
   );
 };
+
 
 
 export default QRScreen;
