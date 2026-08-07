@@ -15,8 +15,10 @@ export default function ReceiverPage({ token, keyString }) {
     progress,
     error,
     connect,
-    acceptTransfer
+    acceptTransfer,
+    saveFileItem
   } = useReceiver();
+
 
   useEffect(() => {
     if (token && keyString) {
@@ -145,14 +147,32 @@ export default function ReceiverPage({ token, keyString }) {
                   </svg>
                 </motion.div>
                 <h2 className="text-3xl font-light mb-2 text-[#F5F5F2]">Transfer Complete</h2>
-                <p className="text-[#9CA3A2] text-sm mb-2">{files.length} {files.length === 1 ? 'file' : 'files'} received & verified.</p>
-                <p className="text-xs text-[#5C6462] mb-6">Download initiated cleanly.</p>
+                <p className="text-[#9CA3A2] text-sm mb-4">{files.length} {files.length === 1 ? 'file' : 'files'} received & verified.</p>
+                
+                <div className="w-full max-h-48 overflow-y-auto space-y-2 mb-6 text-left">
+                  {files.map((file, idx) => (
+                    <div key={idx} className="flex items-center justify-between p-3 rounded-xl bg-white/[0.04] border border-white/[0.08]">
+                      <div className="min-w-0 pr-2">
+                        <p className="text-xs font-medium text-[#F5F5F2] truncate">{file.name}</p>
+                        <p className="text-[10px] text-[#9CA3A2]">{formatFileSize(file.size)}</p>
+                      </div>
+                      <button
+                        onClick={() => saveFileItem(idx)}
+                        className="px-3 py-1.5 rounded-lg bg-[#5BA5A5]/20 hover:bg-[#5BA5A5]/30 text-[#5BA5A5] text-xs font-medium transition-colors flex-shrink-0"
+                      >
+                        Save / Share
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
                 <button 
                   onClick={() => window.location.href = '/'}
                   className="w-full py-3 rounded-xl bg-white/10 hover:bg-white/20 text-[#F5F5F2] font-medium text-sm transition-colors"
                 >
                   Done
                 </button>
+
 
               </GlassCard>
             </motion.div>

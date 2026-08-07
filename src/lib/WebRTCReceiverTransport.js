@@ -342,7 +342,7 @@ export class WebRTCReceiverTransport {
     const file = new File([blob], info.name, { type: mimeType, lastModified: Date.now() });
 
     if (!this.completedFiles) this.completedFiles = [];
-    this.completedFiles.push(file);
+    this.completedFiles.push({ file, blob, filename: info.name, mimeType });
 
     this._triggerBrowserDownload(blob, info.name, file);
 
@@ -350,11 +350,15 @@ export class WebRTCReceiverTransport {
     this.receivedFiles.delete(fileId);
   }
 
+  saveFileItem(item) {
+    if (!item) return;
+    this._triggerBrowserDownload(item.blob, item.filename, item.file, true);
+  }
 
-  async _triggerBrowserDownload(blob, filename, fileObj) {
+  async _triggerBrowserDownload(blob, filename, fileObj, forceManual = false) {
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     
-    // For iOS Safari: Use Web Share API if available to trigger native "Save Image" / Share Sheet
+    // For iOS Safari: Use Web Share API if available to trigger native "Save Image / Video" Share Sheet
     if (isIOS && navigator.share && navigator.canShare && fileObj) {
       try {
         if (navigator.canShare({ files: [fileObj] })) {
@@ -365,7 +369,7 @@ export class WebRTCReceiverTransport {
           return;
         }
       } catch (err) {
-        console.warn('[ReceiverTransport] Native share cancelled or failed, falling back to download:', err);
+        console.warn('[ReceiverTransport] Native share cancelled or failed:', err);
       }
     }
 
@@ -376,8 +380,9 @@ export class WebRTCReceiverTransport {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
   }
+
 
 
   _updateProgressStats() {

@@ -87,6 +87,12 @@ export default function useReceiver() {
     setStatus('CANCELLED');
   }, []);
 
+  const saveFileItem = useCallback((index) => {
+    if (transportRef.current && transportRef.current.completedFiles?.[index]) {
+      transportRef.current.saveFileItem(transportRef.current.completedFiles[index]);
+    }
+  }, []);
+
   return {
     status,
     session,
@@ -95,6 +101,8 @@ export default function useReceiver() {
     error,
     connect,
     acceptTransfer,
-    cancel
+    cancel,
+    saveFileItem
   };
 }
+
