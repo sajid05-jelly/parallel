@@ -28,11 +28,13 @@ const isSupabaseConfigured = () => {
 
 
 export async function generateToken() {
-  const randomBytes = window.crypto.getRandomValues(new Uint8Array(32));
-  const token = base64urlEncode(randomBytes);
+  const randomBytes = window.crypto.getRandomValues(new Uint8Array(16));
+  const hashArray = Array.from(randomBytes);
+  const token = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
   const tokenHash = await hashString(token);
   return { token, tokenHash };
 }
+
 
 export async function createSession({ totalFiles, totalBytes, oneReceiverMode = true }) {
   try {
