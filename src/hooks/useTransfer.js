@@ -201,11 +201,16 @@ export function useTransfer() {
         setStatus('WAITING');
       }
     } catch (err) {
-      console.error('Portal creation error:', err);
-      const detail = err?.message || 'We couldn\'t create a temporary session.';
-      setError(`Couldn't open portal. ${detail}`);
+      console.error('[PARALLEL] Portal creation error:', err);
+      const isDev = process.env.NODE_ENV === 'development';
+      const detail = err?.message || 'Check your internet connection and try again.';
+      const userMsg = isDev
+        ? `Couldn't open portal. ${detail}`
+        : 'Couldn\'t open portal. We couldn\'t create the temporary connection. Check your connection and try again.';
+      setError(userMsg);
       setStatus('FAILED');
     }
+
 
   }
 

@@ -17,8 +17,13 @@ export async function hashString(str) {
 const isSupabaseConfigured = () => {
   const url = import.meta.env.VITE_SUPABASE_URL;
   const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
-  return Boolean(url && key && !url.includes('your-project') && !key.includes('your-anon-key'));
+  if (!url || !key) return false;
+  const u = url.trim();
+  const k = key.trim();
+  if (u.includes('placeholder.supabase.co') || k.includes('placeholder-key')) return false;
+  return Boolean(u.startsWith('http://') || u.startsWith('https://'));
 };
+
 
 export async function generateToken() {
   const randomBytes = window.crypto.getRandomValues(new Uint8Array(32));

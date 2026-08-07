@@ -22,12 +22,16 @@ export class SupabaseSignaling {
       onCancel: null
     };
 
+    const url = import.meta.env.VITE_SUPABASE_URL;
+    const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
     this.isRealSupabase = Boolean(
-      import.meta.env.VITE_SUPABASE_URL &&
-      import.meta.env.VITE_SUPABASE_ANON_KEY &&
-      !import.meta.env.VITE_SUPABASE_URL.includes('your-project')
+      url && key &&
+      !url.includes('placeholder.supabase.co') &&
+      !key.includes('placeholder-key') &&
+      (url.startsWith('http://') || url.startsWith('https://'))
     );
   }
+
 
   /**
    * Subscribe to the session signaling channel
