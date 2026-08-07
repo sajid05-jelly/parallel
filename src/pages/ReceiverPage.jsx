@@ -156,10 +156,11 @@ export default function ReceiverPage({ token, keyString }) {
               <ErrorState 
                 type="expired"
                 message="Portal Not Found"
-                description="This portal does not exist. Check the URL or scan a new QR code."
+                description={error || "This portal does not exist. Check the URL or scan a new QR code."}
               />
             </motion.div>
           )}
+
 
           {status === 'EXPIRED' && (
             <motion.div key="expired" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="w-full max-w-md mx-auto">
