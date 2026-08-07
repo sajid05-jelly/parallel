@@ -404,25 +404,46 @@ export class WebRTCReceiverTransport {
   }
 
   cancel() {
-    console.log('[ReceiverTransport] Cancelling receiver transport');
-    if (this.dataChannel && this.dataChannel.readyState === 'open') {
+    console.log('[ReceiverTransport] Cleaning up receiver transport session');
+    
+    if (this._connectionTimeout) {
+      clearTimeout(this._connectionTimeout);
+      this._connectionTimeout = null;
+    }
+
+    if (this.dataChannel) {
       try {
-        this.dataChannel.send(encodeControlMessage(MESSAGE_TYPES.CANCEL));
+        if (this.dataChannel.readyState === 'open') {
+          this.dataChannel.send(encodeControlMessage(MESSAGE_TYPES.CANCEL));
+        }
+        this.dataChannel.close();
       } catch (e) {
         // ignore
       }
+      this.dataChannel = null;
     }
 
     if (this.peerConnection) {
-      this.peerConnection.close();
+      try {
+        this.peerConnection.close();
+      } catch (e) {
+        // ignore
+      }
       this.peerConnection = null;
     }
 
     if (this.signaling) {
-      this.signaling.unsubscribe();
+      try {
+        this.signaling.unsubscribe();
+      } catch (e) {
+        // ignore
+      }
       this.signaling = null;
     }
 
-    this._updateStatus('CANCELLED');
+    if (!this.isCompleted && this.status !== 'COMPLETED') {
+      this._updateStatus('CANCELLED');
+    }
   }
+
 }

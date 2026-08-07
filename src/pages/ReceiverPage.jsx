@@ -144,14 +144,16 @@ export default function ReceiverPage({ token, keyString }) {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                   </svg>
                 </motion.div>
-                <h2 className="text-3xl font-light mb-2 text-[#F5F5F2]">Everything arrived.</h2>
-                <p className="text-xs text-[#5C6462] mt-4 mb-6">Files saved to your downloads.</p>
+                <h2 className="text-3xl font-light mb-2 text-[#F5F5F2]">Transfer Complete</h2>
+                <p className="text-[#9CA3A2] text-sm mb-2">{files.length} {files.length === 1 ? 'file' : 'files'} received & verified.</p>
+                <p className="text-xs text-[#5C6462] mb-6">Download initiated cleanly.</p>
                 <button 
                   onClick={() => window.location.href = '/'}
                   className="w-full py-3 rounded-xl bg-white/10 hover:bg-white/20 text-[#F5F5F2] font-medium text-sm transition-colors"
                 >
                   Done
                 </button>
+
               </GlassCard>
             </motion.div>
           )}

@@ -298,12 +298,18 @@ export class WebRTCTransport {
       }
 
       if (!this.isTransferCancelled) {
+        // Wait until all binary chunk bytes have actually flushed out of WebRTC DataChannel buffer
+        while (this.dataChannel && this.dataChannel.bufferedAmount > 0) {
+          await new Promise((r) => setTimeout(r, 50));
+        }
+
         // Signal TRANSFER_COMPLETE
         this.dataChannel.send(encodeControlMessage(MESSAGE_TYPES.TRANSFER_COMPLETE));
         await updateSession(this.sessionId, { status: 'COMPLETED' });
         this._updateStatus('COMPLETED');
         this.onComplete({ token: this.token, keyString: this.keyString, sessionId: this.sessionId });
       }
+
     } catch (err) {
       console.error('[WebRTCTransport] File stream error:', err);
       this.onError(err);
@@ -322,10 +328,11 @@ export class WebRTCTransport {
     for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
       if (this.isTransferCancelled) break;
 
-      // 1. Backpressure Check: Pause if DataChannel buffer is full
-      if (this.dataChannel.bufferedAmount > HIGH_WATER_MARK) {
+      // 1. Backpressure Check: Pause if DataChannel buffer is full (4MB)
+      if (this.dataChannel.bufferedAmount > 4 * 1024 * 1024) {
         await this._waitForBufferDrain();
       }
+
 
       // 2. Slice file incrementally from disk (bounded RAM usage)
       const start = chunkIndex * chunkSize;
@@ -394,24 +401,41 @@ export class WebRTCTransport {
   }
 
   async cancelPortal() {
-    console.log('[WebRTCTransport] Cancelling portal transfer');
+    console.log('[WebRTCTransport] Cleaning up portal transfer session');
     this.isTransferCancelled = true;
 
-    if (this.dataChannel && this.dataChannel.readyState === 'open') {
+    if (this._connectionTimeout) {
+      clearTimeout(this._connectionTimeout);
+      this._connectionTimeout = null;
+    }
+
+    if (this.dataChannel) {
       try {
-        this.dataChannel.send(encodeControlMessage(MESSAGE_TYPES.CANCEL));
+        if (this.dataChannel.readyState === 'open') {
+          this.dataChannel.send(encodeControlMessage(MESSAGE_TYPES.CANCEL));
+        }
+        this.dataChannel.close();
       } catch (e) {
-        // ignore
+        // ignore idempotent close errors
       }
+      this.dataChannel = null;
     }
 
     if (this.peerConnection) {
-      this.peerConnection.close();
+      try {
+        this.peerConnection.close();
+      } catch (e) {
+        // ignore idempotent close errors
+      }
       this.peerConnection = null;
     }
 
     if (this.signaling) {
-      this.signaling.unsubscribe();
+      try {
+        this.signaling.unsubscribe();
+      } catch (e) {
+        // ignore idempotent unsubscribe errors
+      }
       this.signaling = null;
     }
 
@@ -419,6 +443,8 @@ export class WebRTCTransport {
       await cancelSession(this.sessionId);
     }
 
-    this._updateStatus('CANCELLED');
+    if (!this.isCompleted && this.status !== 'COMPLETED') {
+      this._updateStatus('CANCELLED');
+    }
   }
 }
