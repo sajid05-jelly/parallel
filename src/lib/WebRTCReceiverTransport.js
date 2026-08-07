@@ -73,6 +73,7 @@ export class WebRTCReceiverTransport {
 
     // 3. Initialize Signaling
     this.signaling = new SupabaseSignaling(this.sessionId, 'receiver');
+    this._iceCandidateQueue = [];
 
     await this.signaling.subscribe({
       onOffer: async (offerSdp) => {
@@ -82,10 +83,15 @@ export class WebRTCReceiverTransport {
       onIceCandidate: async (candidate) => {
         console.log('[ReceiverTransport] Received ICE candidate from sender');
         if (this.peerConnection && candidate) {
-          try {
-            await this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-          } catch (e) {
-            console.warn('[ReceiverTransport] Error adding remote ICE candidate:', e);
+          if (!this.peerConnection.remoteDescription) {
+            console.log('[ReceiverTransport] Remote description not set yet. Queuing ICE candidate.');
+            this._iceCandidateQueue.push(candidate);
+          } else {
+            try {
+              await this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+            } catch (e) {
+              console.warn('[ReceiverTransport] Error adding remote ICE candidate:', e);
+            }
           }
         }
       },
@@ -95,13 +101,49 @@ export class WebRTCReceiverTransport {
       }
     });
 
-    // Notify sender that receiver claimed the portal
-    await this.signaling.sendSignal('RECEIVER_CLAIMED', { credential: receiverCredential });
-
     this._setupPeerConnection();
     this._updateStatus('NEGOTIATING');
 
+    // Notify sender that receiver claimed the portal
+    await this.signaling.sendSignal('RECEIVER_CLAIMED', { credential: receiverCredential });
+
+    // 15-second connection timeout trigger
+    this._connectionTimeout = setTimeout(() => {
+      if (this.status !== 'CONNECTED' && this.status !== 'TRANSFERRING' && this.status !== 'COMPLETED') {
+        console.warn('[ReceiverTransport] Connection timed out after 15s');
+        this.onError(new Error('Couldn\'t establish connection. Connection timed out after 15s.'));
+        this._updateStatus('FAILED');
+      }
+    }, 15000);
+
     return { session: this.session };
+  }
+
+  async _handleOffer(offerSdp) {
+    if (!this.peerConnection) return;
+    try {
+      console.log('[ReceiverTransport] Setting Remote Description (Offer)');
+      await this.peerConnection.setRemoteDescription(new RTCSessionDescription(offerSdp));
+
+      // Process queued ICE candidates now that remote description is set
+      while (this._iceCandidateQueue.length > 0) {
+        const cand = this._iceCandidateQueue.shift();
+        try {
+          await this.peerConnection.addIceCandidate(new RTCIceCandidate(cand));
+        } catch (e) {
+          console.warn('[ReceiverTransport] Error adding queued ICE candidate:', e);
+        }
+      }
+
+      console.log('[ReceiverTransport] Creating Answer SDP');
+      const answer = await this.peerConnection.createAnswer();
+      await this.peerConnection.setLocalDescription(answer);
+
+      console.log('[ReceiverTransport] Sending Answer SDP to sender');
+      await this.signaling.sendSignal('ANSWER', answer);
+    } catch (err) {
+      console.error('[ReceiverTransport] Error handling offer:', err);
+    }
   }
 
   _setupPeerConnection() {
@@ -110,23 +152,24 @@ export class WebRTCReceiverTransport {
 
     this.peerConnection.onicecandidate = (event) => {
       if (event.candidate && this.signaling) {
+        console.log('[ReceiverTransport] Sending ICE candidate to sender');
         this.signaling.sendSignal('ICE_CANDIDATE', event.candidate);
       }
     };
 
     this.peerConnection.onconnectionstatechange = () => {
       const state = this.peerConnection.connectionState;
-      console.log(`[ReceiverTransport] PeerConnection state: ${state}`);
+      const iceState = this.peerConnection.iceConnectionState;
+      console.log(`[ReceiverTransport] PeerConnection state: ${state}, ICE state: ${iceState}`);
       if (state === 'connected') {
+        if (this._connectionTimeout) clearTimeout(this._connectionTimeout);
         this._updateStatus('CONNECTED');
-      } else if (state === 'failed' || state === 'disconnected') {
-        setTimeout(() => {
-          if (this.peerConnection && this.peerConnection.connectionState === 'disconnected') {
-            this._updateStatus('FAILED');
-          }
-        }, 5000);
+      } else if (state === 'failed') {
+        if (this._connectionTimeout) clearTimeout(this._connectionTimeout);
+        this._updateStatus('FAILED');
       }
     };
+
 
     // Receiver waits for DataChannel created by sender
     this.peerConnection.ondatachannel = (event) => {
