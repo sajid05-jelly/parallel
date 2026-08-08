@@ -17,6 +17,7 @@ function fileKey(file) {
 export function useTransfer() {
   const [files, setFiles] = useState([]);
   const [status, setStatus] = useState('IDLE');
+  const [mode, setMode] = useState(null); // null (unselected), 'nearby', or 'anywhere'
   const [progress, setProgress] = useState({
     totalBytes: 0,
     sentBytes: 0,
@@ -33,6 +34,8 @@ export function useTransfer() {
   const [qrExpiry, setQrExpiry] = useState(null);
 
   const transportRef = useRef(null);
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
 
   // Cleanup preview URLs on unmount
   useEffect(() => {
@@ -240,11 +243,14 @@ export function useTransfer() {
     setToken(null);
     setError(null);
     setQrExpiry(null);
+    setMode(null);
   }, [clearFiles]);
 
   return {
     files,
     status,
+    mode,
+    setMode,
     progress,
     transferUrl,
     token,
@@ -258,5 +264,6 @@ export function useTransfer() {
     reset,
   };
 }
+
 
 export default useTransfer;

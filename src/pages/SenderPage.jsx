@@ -15,6 +15,8 @@ export default function SenderPage() {
   const {
     files,
     status,
+    mode,
+    setMode,
     progress,
     transferUrl,
     token,
@@ -36,6 +38,87 @@ export default function SenderPage() {
 
   const renderContent = () => {
     if (status === 'IDLE' || status === 'UPLOADING') {
+      // Step 1: Mode Selection (Nearby ⚡ vs Anywhere 🌐)
+      if (!mode) {
+        return (
+          <motion.div
+            key="mode-selection"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ duration: 0.4 }}
+            className="w-full max-w-2xl mx-auto text-center"
+          >
+            <div className="mb-10">
+              <span className="text-xs tracking-[0.25em] text-[#5C6462] font-mono uppercase mb-4 inline-block">
+                Direct P2P File Transfer
+              </span>
+              <h1 className="font-space text-3xl md:text-5xl font-medium text-[#F5F5F2] leading-tight tracking-tight mb-3">
+                How do you want to send?
+              </h1>
+              <p className="text-sm text-[#9CA3A2] max-w-md mx-auto">
+                Choose the best transfer mode for your current devices and network.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5 text-left mb-8">
+              {/* MODE 1 — NEARBY ⚡ */}
+              <button
+                onClick={() => setMode('nearby')}
+                className="group p-6 rounded-2xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.08] hover:border-[#D4A574]/40 transition-all text-left flex flex-col justify-between"
+              >
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <span className="w-12 h-12 rounded-xl bg-[#D4A574]/10 text-[#D4A574] text-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                      ⚡
+                    </span>
+                    <span className="text-[10px] font-mono uppercase tracking-widest px-2.5 py-1 rounded-full bg-[#D4A574]/10 text-[#D4A574]">
+                      MAX SPEED
+                    </span>
+                  </div>
+                  <h3 className="text-xl font-medium text-[#F5F5F2] mb-1 group-hover:text-[#D4A574] transition-colors">
+                    Nearby Transfer
+                  </h3>
+                  <p className="text-xs text-[#9CA3A2] leading-relaxed mb-4">
+                    Connect both devices to the same Wi-Fi for direct local LAN transfer.
+                  </p>
+                </div>
+                <div className="text-[11px] text-[#5C6462] font-mono flex items-center gap-1 mt-2">
+                  <span>Same Wi-Fi</span> &middot; <span>Ultra fast</span>
+                </div>
+              </button>
+
+              {/* MODE 2 — ANYWHERE 🌐 */}
+              <button
+                onClick={() => setMode('anywhere')}
+                className="group p-6 rounded-2xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.08] hover:border-[#5BA5A5]/40 transition-all text-left flex flex-col justify-between"
+              >
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <span className="w-12 h-12 rounded-xl bg-[#5BA5A5]/10 text-[#5BA5A5] text-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                      🌐
+                    </span>
+                    <span className="text-[10px] font-mono uppercase tracking-widest px-2.5 py-1 rounded-full bg-[#5BA5A5]/10 text-[#5BA5A5]">
+                      UNIVERSAL
+                    </span>
+                  </div>
+                  <h3 className="text-xl font-medium text-[#F5F5F2] mb-1 group-hover:text-[#5BA5A5] transition-colors">
+                    Anywhere Transfer
+                  </h3>
+                  <p className="text-xs text-[#9CA3A2] leading-relaxed mb-4">
+                    Send to devices on different networks, mobile data, or anywhere in the world.
+                  </p>
+                </div>
+                <div className="text-[11px] text-[#5C6462] font-mono flex items-center gap-1 mt-2">
+                  <span>Different networks</span> &middot; <span>Works anywhere</span>
+                </div>
+              </button>
+            </div>
+          </motion.div>
+        );
+      }
+
+      // Step 2: File selection flow
       if (files.length === 0) {
         return (
           <motion.div 
@@ -46,21 +129,25 @@ export default function SenderPage() {
             transition={{ duration: 0.4 }}
             className="w-full"
           >
-            <div className="text-center mb-10">
-              <span className="text-xs tracking-[0.25em] text-[#5C6462] font-mono uppercase mb-4 inline-block">
-                Private · Temporary · Instant
-              </span>
+            <div className="text-center mb-8">
+              <button
+                onClick={() => setMode(null)}
+                className="text-xs font-mono text-[#9CA3A2] hover:text-[#F5F5F2] mb-4 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/[0.03] border border-white/[0.06] transition-colors"
+              >
+                <span>&larr;</span> Change Mode ({mode === 'nearby' ? '⚡ Nearby' : '🌐 Anywhere'})
+              </button>
               <h1 className="font-space text-4xl md:text-5xl lg:text-6xl font-medium text-[#F5F5F2] leading-tight tracking-tight">
                 Send anything.<br/>
                 Through a temporary <span className="text-gradient-portal font-semibold">portal.</span>
               </h1>
-              <p className="text-sm md:text-base text-[#9CA3A2] max-w-md mx-auto mt-5 leading-relaxed">
-                Direct device-to-device file transfer. No account required, zero cloud storage, complete privacy.
+              <p className="text-sm md:text-base text-[#9CA3A2] max-w-md mx-auto mt-4 leading-relaxed">
+                {mode === 'nearby' 
+                  ? 'Connect both devices to the same Wi-Fi for maximum speed direct LAN transfer.'
+                  : 'Direct device-to-device file transfer across any network.'
+                }
               </p>
             </div>
 
-
-            
             <div className="max-w-xl mx-auto">
               <UploadPortal onFilesSelected={handleFilesSelected} disabled={status === 'UPLOADING'} />
               
@@ -75,7 +162,8 @@ export default function SenderPage() {
             </div>
           </motion.div>
         );
-      } else {
+      }
+ else {
         return (
           <motion.div
             key="file-list"

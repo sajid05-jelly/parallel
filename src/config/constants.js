@@ -10,7 +10,7 @@ export const LOW_WATER_MARK = 1024 * 1024;   // 1MB buffer floor to resume sendi
 
 export const QR_EXPIRY_SECONDS = Number(import.meta.env.VITE_QR_EXPIRY_SECONDS) || 120;
 
-// WebRTC ICE Server Configuration: Direct P2P (STUN) prioritized first, TURN only as fallback
+// WebRTC ICE Server Configuration for ANYWHERE mode (STUN + TURN fallback)
 export const ICE_SERVERS = (() => {
   const stunUrl = import.meta.env.VITE_STUN_URL || 'stun:stun.l.google.com:19302';
   const servers = [
@@ -32,6 +32,13 @@ export const ICE_SERVERS = (() => {
 
   return servers;
 })();
+
+// WebRTC ICE Server Configuration for NEARBY mode (STUN-only to force direct local LAN / host connection)
+export const NEARBY_ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' }
+];
+
 
 
 export const TRANSFER_STATUSES = {

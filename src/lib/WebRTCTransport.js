@@ -1,4 +1,4 @@
-import { ICE_SERVERS, WEBRTC_CHUNK_SIZE, HIGH_WATER_MARK, LOW_WATER_MARK } from '../config/constants';
+import { ICE_SERVERS, NEARBY_ICE_SERVERS, WEBRTC_CHUNK_SIZE, HIGH_WATER_MARK, LOW_WATER_MARK } from '../config/constants';
 import { generateEncryptionKey, encryptChunk, base64urlEncode } from './crypto';
 import { createSession, updateSession, cancelSession } from './sessionManager';
 import { SupabaseSignaling } from './SupabaseSignaling';
@@ -6,11 +6,12 @@ import { encodeControlMessage, encodeBinaryChunk, decodeMessage, MESSAGE_TYPES }
 
 export class WebRTCTransport {
   constructor(options = {}) {
-    const { onProgress, onStatusChange, onError, onComplete } = options;
+    const { onProgress, onStatusChange, onError, onComplete, mode = 'anywhere' } = options;
     this.onProgress = onProgress || (() => {});
     this.onStatusChange = onStatusChange || (() => {});
     this.onError = onError || (() => {});
     this.onComplete = onComplete || (() => {});
+    this.mode = mode; // 'nearby' or 'anywhere'
 
     this.files = [];
     this.sessionId = null;
@@ -18,6 +19,7 @@ export class WebRTCTransport {
     this.encryptionKey = null;
     this.keyString = null;
     this.status = 'IDLE';
+
 
     this.peerConnection = null;
     this.dataChannel = null;
@@ -169,8 +171,10 @@ export class WebRTCTransport {
   }
 
   _setupPeerConnection() {
-    console.log('[WebRTCTransport] Initializing RTCPeerConnection with ICE servers:', ICE_SERVERS);
-    this.peerConnection = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    const selectedServers = this.mode === 'nearby' ? NEARBY_ICE_SERVERS : ICE_SERVERS;
+    console.log(`[WebRTCTransport] Initializing RTCPeerConnection for mode [${this.mode}] with ICE servers:`, selectedServers);
+    this.peerConnection = new RTCPeerConnection({ iceServers: selectedServers });
+
 
     // Handle ICE Candidates
     this.peerConnection.onicecandidate = (event) => {
