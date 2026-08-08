@@ -2,17 +2,21 @@ export const MAX_FILE_SIZE = Number(import.meta.env.VITE_MAX_FILE_SIZE) || 52428
 export const MAX_TRANSFER_SIZE = Number(import.meta.env.VITE_MAX_TRANSFER_SIZE) || 1073741824; // 1GB  
 export const MAX_FILES_PER_TRANSFER = Number(import.meta.env.VITE_MAX_FILES_PER_TRANSFER) || 50;
 
-// WebRTC DataChannel chunking configuration (64KB chunks for optimal RTCDataChannel performance)
-export const WEBRTC_CHUNK_SIZE = Number(import.meta.env.VITE_WEBRTC_CHUNK_SIZE) || 65536; // 64KB
-export const HIGH_WATER_MARK = 1024 * 1024; // 1MB buffer ceiling for backpressure
-export const LOW_WATER_MARK = 256 * 1024;   // 256KB buffer floor to resume sending
+// WebRTC DataChannel chunking configuration (256KB chunks & 8MB buffer window)
+export const WEBRTC_CHUNK_SIZE = Number(import.meta.env.VITE_WEBRTC_CHUNK_SIZE) || 262144; // 256KB for maximum throughput
+export const HIGH_WATER_MARK = 8 * 1024 * 1024; // 8MB buffer ceiling
+export const LOW_WATER_MARK = 2 * 1024 * 1024;   // 2MB buffer floor to resume sending
 
 export const QR_EXPIRY_SECONDS = Number(import.meta.env.VITE_QR_EXPIRY_SECONDS) || 120;
 
-// WebRTC ICE Server Configuration
+// WebRTC ICE Server Configuration: Direct P2P (STUN) prioritized first, TURN only as fallback
 export const ICE_SERVERS = (() => {
   const stunUrl = import.meta.env.VITE_STUN_URL || 'stun:stun.l.google.com:19302';
-  const servers = [{ urls: stunUrl }];
+  const servers = [
+    { urls: stunUrl },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' }
+  ];
 
   const turnUrl = import.meta.env.VITE_TURN_URL;
   const turnUsername = import.meta.env.VITE_TURN_USERNAME;
@@ -27,6 +31,7 @@ export const ICE_SERVERS = (() => {
 
   return servers;
 })();
+
 
 export const TRANSFER_STATUSES = {
   IDLE: 'IDLE',

@@ -328,10 +328,11 @@ export class WebRTCTransport {
     for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
       if (this.isTransferCancelled) break;
 
-      // 1. Backpressure Check: Pause if DataChannel buffer is full (4MB)
-      if (this.dataChannel.bufferedAmount > 4 * 1024 * 1024) {
+      // 1. Backpressure Check: Pause only when buffer hits 8MB ceiling
+      if (this.dataChannel.bufferedAmount > HIGH_WATER_MARK) {
         await this._waitForBufferDrain();
       }
+
 
 
       // 2. Slice file incrementally from disk (bounded RAM usage)
