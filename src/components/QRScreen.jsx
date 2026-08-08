@@ -3,7 +3,8 @@ import QRCodeStyling from 'qr-code-styling';
 import GlassCard from './GlassCard';
 import { formatFileSize, formatDuration } from '../config/constants';
 
-const QRScreen = ({ transferUrl, fileCount, totalSize, expiryDate, onCopyLink, onCancel, status }) => {
+const QRScreen = ({ transferUrl, fileCount, totalSize, expiryDate, onCopyLink, onCancel, status, mode }) => {
+
   const isExpired = status === 'EXPIRED';
   const isConnected = status === 'CONNECTED';
   const containerRef = useRef(null);
@@ -62,7 +63,7 @@ const QRScreen = ({ transferUrl, fileCount, totalSize, expiryDate, onCopyLink, o
             </span>
           )}
           <span className="text-sm font-medium text-[#9CA3A2]">
-            {isExpired ? 'Portal closed' : isConnected ? 'Portal connected' : 'Portal is open'}
+            {isExpired ? 'Portal closed' : isConnected ? 'Direct LAN Connected' : mode === 'nearby' ? 'Waiting for nearby device...' : 'Portal is open'}
           </span>
         </div>
 
@@ -84,16 +85,22 @@ const QRScreen = ({ transferUrl, fileCount, totalSize, expiryDate, onCopyLink, o
               </div>
             </div>
 
-            <p className="text-[#F5F5F2] font-medium mb-1">Scan to receive all files</p>
+            <p className="text-[#F5F5F2] font-medium mb-1">
+              {mode === 'nearby' ? 'Scan to pair nearby device' : 'Scan to receive all files'}
+            </p>
             <p className="text-sm text-[#9CA3A2] mb-6">
               {fileCount} {fileCount === 1 ? 'file' : 'files'} · {formattedSize}
             </p>
 
             <div className="w-full bg-white/[0.04] rounded-xl p-3 mb-6 border border-white/[0.08]">
               <p className="text-sm text-[#9CA3A2]">
-                Portal closes in <span className="text-[#5BA5A5] font-mono font-medium">{formatDuration(remaining)}</span>
+                {mode === 'nearby' ? 'Connect both devices to same Wi-Fi' : 'Portal closes in '} 
+                <span className="text-[#5BA5A5] font-mono font-medium">
+                  {mode === 'nearby' ? '' : formatDuration(remaining)}
+                </span>
               </p>
             </div>
+
 
             <div className="flex flex-col sm:flex-row gap-3 w-full">
               <button

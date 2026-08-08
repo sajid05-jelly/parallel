@@ -201,7 +201,9 @@ export default function SenderPage() {
             expiryDate={qrExpiry} 
             onCancel={cancelTransfer}
             status={status}
+            mode={mode}
           />
+
         </motion.div>
       );
     }
