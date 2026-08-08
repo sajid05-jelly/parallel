@@ -192,35 +192,46 @@ export class WebRTCTransport {
       if (state === 'connected') {
         if (this._connectionTimeout) clearTimeout(this._connectionTimeout);
 
-        // Strict LAN Validation for Nearby Mode: Inspect selected ICE Candidate Pair
+        // Strict LAN Validation for Nearby Mode: Inspect selected ACTIVE ICE Candidate Pair
         if (this.mode === 'nearby') {
           let isDirectLocal = false;
           try {
             const stats = await this.peerConnection.getStats();
+            let activePairFound = false;
             stats.forEach((report) => {
-              if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+              if (report.type === 'candidate-pair' && (report.state === 'succeeded' || report.nominated)) {
+                activePairFound = true;
                 const localCand = stats.get(report.localCandidateId);
                 const remoteCand = stats.get(report.remoteCandidateId);
-                console.log('[WebRTCTransport] Nearby candidate-pair stats:', localCand?.candidateType, remoteCand?.candidateType);
-                if (localCand?.candidateType === 'host' || remoteCand?.candidateType === 'host' || localCand?.candidateType === 'srflx') {
-                  if (localCand?.candidateType !== 'relay' && remoteCand?.candidateType !== 'relay') {
-                    isDirectLocal = true;
-                  }
+                console.log('[WebRTCTransport] Active candidate pair:', localCand?.candidateType, '<->', remoteCand?.candidateType);
+                
+                // Reject if either end uses TURN/relay
+                if (localCand?.candidateType === 'relay' || remoteCand?.candidateType === 'relay') {
+                  isDirectLocal = false;
+                } else if (localCand?.candidateType === 'host' && remoteCand?.candidateType === 'host') {
+                  isDirectLocal = true; // Preferred host-to-host LAN path
+                } else if (localCand?.candidateType === 'host' || remoteCand?.candidateType === 'host' || localCand?.candidateType === 'srflx') {
+                  isDirectLocal = true; // Direct P2P LAN path without TURN
                 }
               }
             });
+            if (!activePairFound) {
+              // Fallback check if browser doesn't report candidate-pair type
+              isDirectLocal = true;
+            }
           } catch (e) {
-            console.warn('[WebRTCTransport] Stats error, fallback to candidate checks:', e);
+            console.warn('[WebRTCTransport] Stats error:', e);
             isDirectLocal = true;
           }
 
           if (!isDirectLocal) {
-            console.error('[WebRTCTransport] Nearby mode rejected: Selected candidate pair is not direct LAN!');
+            console.error('[WebRTCTransport] Nearby mode rejected: Selected active candidate pair uses TURN/relay!');
             this.onError(new Error('Nearby Transfer requires both devices to be connected to the same Wi-Fi.'));
             this._updateStatus('FAILED');
             return;
           }
         }
+
 
         if (this.status !== 'TRANSFERRING' && this.status !== 'COMPLETED') {
           this._updateStatus('CONNECTED');
@@ -362,22 +373,22 @@ export class WebRTCTransport {
    */
   async _sendFileInChunks(fileInfo) {
     const file = fileInfo.raw;
-    const chunkSize = WEBRTC_CHUNK_SIZE;
-    const totalChunks = fileInfo.totalChunks;
+    // Dynamically negotiate max safe packet size below browser SCTP maxMessageSize
+    const maxMsgSize = this.dataChannel?.maxMessageSize || 65536;
+    const safeChunkSize = Math.min(WEBRTC_CHUNK_SIZE, Math.max(16384, maxMsgSize - 256));
+    const totalChunks = Math.ceil(file.size / safeChunkSize);
 
     for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
       if (this.isTransferCancelled) break;
 
-      // 1. Backpressure Check: Pause only when buffer hits 8MB ceiling
+      // 1. Backpressure Check: Pause only when buffer hits 16MB ceiling
       if (this.dataChannel.bufferedAmount > HIGH_WATER_MARK) {
         await this._waitForBufferDrain();
       }
 
+      const start = chunkIndex * safeChunkSize;
+      const end = Math.min(file.size, start + safeChunkSize);
 
-
-      // 2. Slice file incrementally from disk (bounded RAM usage)
-      const start = chunkIndex * chunkSize;
-      const end = Math.min(file.size, start + chunkSize);
       const blobSlice = file.slice(start, end);
       const rawArrayBuffer = await blobSlice.arrayBuffer();
 
