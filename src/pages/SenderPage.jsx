@@ -149,6 +149,20 @@ export default function SenderPage() {
             </div>
 
             <div className="max-w-xl mx-auto">
+              {mode === 'nearby' && (
+                <div className="mb-6 p-4 rounded-xl bg-[#D4A574]/10 border border-[#D4A574]/30 text-left flex items-start gap-3">
+                  <span className="text-xl">⚠️</span>
+                  <div>
+                    <h4 className="text-xs font-bold text-[#D4A574] uppercase tracking-wider mb-1">
+                      Same Wi-Fi Required
+                    </h4>
+                    <p className="text-xs text-[#9CA3A2] leading-relaxed">
+                      Make sure both sender and receiver devices are connected to the <strong>SAME Wi-Fi network</strong> before scanning the QR code.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               <UploadPortal onFilesSelected={handleFilesSelected} disabled={status === 'UPLOADING'} />
               
               <div className="flex items-center justify-center gap-6 text-xs text-[#5C6462] mt-6">
@@ -160,6 +174,7 @@ export default function SenderPage() {
                 <span>⏱ 2-min expiry</span>
               </div>
             </div>
+
           </motion.div>
         );
       }
