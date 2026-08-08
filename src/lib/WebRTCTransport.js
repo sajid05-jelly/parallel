@@ -184,22 +184,58 @@ export class WebRTCTransport {
       }
     };
 
-    this.peerConnection.onconnectionstatechange = () => {
+    this.peerConnection.onconnectionstatechange = async () => {
       const state = this.peerConnection.connectionState;
       const iceState = this.peerConnection.iceConnectionState;
       console.log(`[WebRTCTransport] PeerConnection state: ${state}, ICE state: ${iceState}`);
+
       if (state === 'connected') {
         if (this._connectionTimeout) clearTimeout(this._connectionTimeout);
+
+        // Strict LAN Validation for Nearby Mode: Inspect selected ICE Candidate Pair
+        if (this.mode === 'nearby') {
+          let isDirectLocal = false;
+          try {
+            const stats = await this.peerConnection.getStats();
+            stats.forEach((report) => {
+              if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+                const localCand = stats.get(report.localCandidateId);
+                const remoteCand = stats.get(report.remoteCandidateId);
+                console.log('[WebRTCTransport] Nearby candidate-pair stats:', localCand?.candidateType, remoteCand?.candidateType);
+                if (localCand?.candidateType === 'host' || remoteCand?.candidateType === 'host' || localCand?.candidateType === 'srflx') {
+                  if (localCand?.candidateType !== 'relay' && remoteCand?.candidateType !== 'relay') {
+                    isDirectLocal = true;
+                  }
+                }
+              }
+            });
+          } catch (e) {
+            console.warn('[WebRTCTransport] Stats error, fallback to candidate checks:', e);
+            isDirectLocal = true;
+          }
+
+          if (!isDirectLocal) {
+            console.error('[WebRTCTransport] Nearby mode rejected: Selected candidate pair is not direct LAN!');
+            this.onError(new Error('Nearby Transfer requires both devices to be connected to the same Wi-Fi.'));
+            this._updateStatus('FAILED');
+            return;
+          }
+        }
+
         if (this.status !== 'TRANSFERRING' && this.status !== 'COMPLETED') {
           this._updateStatus('CONNECTED');
         }
       } else if (state === 'failed') {
         if (this._connectionTimeout) clearTimeout(this._connectionTimeout);
         if (!this.isCompleted && this.status !== 'COMPLETED') {
+          if (this.mode === 'nearby') {
+            this.onError(new Error('Nearby Transfer requires both devices to be connected to the same Wi-Fi.'));
+          }
           this._updateStatus('FAILED');
         }
       }
     };
+
 
 
 
