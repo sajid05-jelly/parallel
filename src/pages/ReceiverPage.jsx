@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import useReceiver from '../hooks/useReceiver';
 import ParallelBackground from '../components/ParallelBackground';
@@ -8,7 +8,62 @@ import PortalAnimation from '../components/PortalAnimation';
 import ErrorState from '../components/ErrorState';
 import { formatFileSize, getFileIcon, getFileTypeCategory } from '../config/constants';
 
+function FileSaveItem({ file, btnLabel, onSave }) {
+  const [isPreparing, setIsPreparing] = useState(false);
+  const [saveError, setSaveError] = useState(null);
+
+  const handleSaveClick = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (isPreparing) return;
+
+    setIsPreparing(true);
+    setSaveError(null);
+
+    try {
+      await onSave();
+    } catch (err) {
+      console.error('File save error:', err);
+      setSaveError('Unable to save this file. Please try again.');
+    } finally {
+      setIsPreparing(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col p-3 rounded-xl bg-white/[0.04] border border-white/[0.08]">
+      <div className="flex items-center justify-between">
+        <div className="min-w-0 pr-3">
+          <p className="text-xs font-medium text-[#F5F5F2] truncate">{file.name}</p>
+          <p className="text-[10px] text-[#9CA3A2]">{formatFileSize(file.size)}</p>
+        </div>
+        <button
+          type="button"
+          onClick={handleSaveClick}
+          disabled={isPreparing}
+          className="px-3.5 py-1.5 rounded-lg bg-[#5BA5A5]/25 hover:bg-[#5BA5A5]/40 text-[#5BA5A5] hover:text-white text-xs font-semibold transition-all flex-shrink-0 flex items-center gap-1.5 border border-[#5BA5A5]/30 cursor-pointer disabled:opacity-50"
+        >
+          {isPreparing ? (
+            <>
+              <span className="w-3 h-3 border-2 border-teal-400 border-t-transparent rounded-full animate-spin"></span>
+              Preparing…
+            </>
+          ) : (
+            <>
+              <span>📥</span> {btnLabel}
+            </>
+          )}
+        </button>
+      </div>
+      {saveError && (
+        <p className="text-[11px] text-red-400 mt-2 font-medium">{saveError}</p>
+      )}
+    </div>
+  );
+}
+
 export default function ReceiverPage({ token, keyString }) {
+
   const {
     status,
     files,
@@ -157,21 +212,16 @@ export default function ReceiverPage({ token, keyString }) {
                     const btnLabel = isImage ? 'Save Photo' : isVideo ? 'Save Video' : 'Save File';
 
                     return (
-                      <div key={idx} className="flex items-center justify-between p-3 rounded-xl bg-white/[0.04] border border-white/[0.08]">
-                        <div className="min-w-0 pr-3">
-                          <p className="text-xs font-medium text-[#F5F5F2] truncate">{file.name}</p>
-                          <p className="text-[10px] text-[#9CA3A2]">{formatFileSize(file.size)}</p>
-                        </div>
-                        <button
-                          onClick={() => saveFileItem(idx)}
-                          className="px-3.5 py-1.5 rounded-lg bg-[#5BA5A5]/25 hover:bg-[#5BA5A5]/40 text-[#5BA5A5] hover:text-white text-xs font-semibold transition-all flex-shrink-0 flex items-center gap-1.5 border border-[#5BA5A5]/30"
-                        >
-                          <span>📥</span> {btnLabel}
-                        </button>
-                      </div>
+                      <FileSaveItem 
+                        key={idx} 
+                        file={file} 
+                        btnLabel={btnLabel} 
+                        onSave={() => saveFileItem(idx)} 
+                      />
                     );
                   })}
                 </div>
+
 
 
                 <button 

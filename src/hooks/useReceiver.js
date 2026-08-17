@@ -87,11 +87,12 @@ export default function useReceiver() {
     setStatus('CANCELLED');
   }, []);
 
-  const saveFileItem = useCallback((index) => {
+  const saveFileItem = useCallback(async (index) => {
     if (transportRef.current && transportRef.current.completedFiles?.[index]) {
-      transportRef.current.saveFileItem(transportRef.current.completedFiles[index]);
+      return await transportRef.current.saveFileItem(transportRef.current.completedFiles[index]);
     }
   }, []);
+
 
   return {
     status,

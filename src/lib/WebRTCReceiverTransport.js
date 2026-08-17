@@ -351,37 +351,57 @@ export class WebRTCReceiverTransport {
   }
 
   saveFileItem(item) {
-    if (!item) return;
-    this._triggerBrowserDownload(item.blob, item.filename, item.file, true);
+    if (!item) return Promise.reject(new Error('File not available'));
+    return this._triggerBrowserDownload(item.blob, item.filename, item.file, true);
   }
 
   async _triggerBrowserDownload(blob, filename, fileObj, forceManual = false) {
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     
+    // Create a real File object if not provided
+    const targetFile = fileObj || new File([blob], filename, { 
+      type: blob.type || 'application/octet-stream',
+      lastModified: Date.now() 
+    });
+
     // For iOS Safari: Use Web Share API if available to trigger native "Save Image / Video" Share Sheet
-    if (isIOS && navigator.share && navigator.canShare && fileObj) {
+    if (isIOS && navigator.share && navigator.canShare) {
       try {
-        if (navigator.canShare({ files: [fileObj] })) {
+        if (navigator.canShare({ files: [targetFile] })) {
           await navigator.share({
-            files: [fileObj],
+            files: [targetFile],
             title: filename,
           });
           return;
         }
       } catch (err) {
-        console.warn('[ReceiverTransport] Native share cancelled or failed:', err);
+        // If user cancelled the share sheet, ignore silently
+        if (err.name === 'AbortError' || err.message?.includes('cancel') || err.message?.includes('cancellation')) {
+          console.log('[ReceiverTransport] User cancelled iOS share sheet.');
+          return;
+        }
+        console.warn('[ReceiverTransport] Native share error, falling back to Blob download:', err);
       }
     }
 
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename || 'download';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 30000);
+    // Standard Desktop / Android Blob Download Fallback
+    try {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename || 'download';
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      // Retain object URL for 60 seconds so browser download manager finishes read
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) {
+      console.error('[ReceiverTransport] Download error:', e);
+      throw new Error('Unable to save this file. Please try again.');
+    }
   }
+
 
 
 
