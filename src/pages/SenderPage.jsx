@@ -150,15 +150,19 @@ export default function SenderPage() {
 
             <div className="max-w-xl mx-auto">
               {mode === 'nearby' && (
-                <div className="mb-6 p-4 rounded-xl bg-[#D4A574]/10 border border-[#D4A574]/30 text-left flex items-start gap-3">
-                  <span className="text-xl">⚠️</span>
-                  <div>
-                    <h4 className="text-xs font-bold text-[#D4A574] uppercase tracking-wider mb-1">
-                      Same Wi-Fi Required
-                    </h4>
-                    <p className="text-xs text-[#9CA3A2] leading-relaxed">
-                      Make sure both sender and receiver devices are connected to the <strong>SAME Wi-Fi network</strong> before scanning the QR code.
-                    </p>
+                <div className="mb-6 p-5 rounded-2xl bg-white/[0.03] border border-[#D4A574]/30 text-left">
+                  <div className="flex items-center gap-3 mb-2">
+                    <span className="w-8 h-8 rounded-lg bg-[#D4A574]/10 text-[#D4A574] text-lg flex items-center justify-center font-bold">
+                      ⚡
+                    </span>
+                    <div>
+                      <h4 className="text-sm font-semibold text-[#F5F5F2]">
+                        Nearby Direct LAN Transfer
+                      </h4>
+                      <p className="text-xs text-[#9CA3A2]">
+                        Requires both devices to be on the <strong>same Wi-Fi network</strong>.
+                      </p>
+                    </div>
                   </div>
                 </div>
               )}
@@ -174,6 +178,7 @@ export default function SenderPage() {
                 <span>⏱ 2-min expiry</span>
               </div>
             </div>
+
 
           </motion.div>
         );

@@ -2,10 +2,11 @@ export const MAX_FILE_SIZE = Number(import.meta.env.VITE_MAX_FILE_SIZE) || 52428
 export const MAX_TRANSFER_SIZE = Number(import.meta.env.VITE_MAX_TRANSFER_SIZE) || 1073741824; // 1GB  
 export const MAX_FILES_PER_TRANSFER = Number(import.meta.env.VITE_MAX_FILES_PER_TRANSFER) || 50;
 
-// WebRTC DataChannel chunking configuration (64KB default dynamically negotiated chunk slice & 16MB buffer window)
+// WebRTC DataChannel chunking configuration (Safe 64KB chunk slice & 1MB buffer window to prevent queue overflow)
 export const WEBRTC_CHUNK_SIZE = Number(import.meta.env.VITE_WEBRTC_CHUNK_SIZE) || 65536; // 64KB safe dynamic default
-export const HIGH_WATER_MARK = 16 * 1024 * 1024; // 16MB high-water mark for maximum LAN speed
-export const LOW_WATER_MARK = 4 * 1024 * 1024;   // 4MB low-water mark floor to resume sending
+export const HIGH_WATER_MARK = 1024 * 1024; // 1MB high-water mark (prevents browser SCTP send queue buffer overflow)
+export const LOW_WATER_MARK = 256 * 1024;   // 256KB low-water mark floor to resume sending
+
 
 
 

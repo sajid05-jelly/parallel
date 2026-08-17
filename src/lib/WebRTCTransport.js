@@ -420,14 +420,37 @@ export class WebRTCTransport {
    */
   _waitForBufferDrain() {
     return new Promise((resolve) => {
+      if (!this.dataChannel || this.dataChannel.bufferedAmount <= LOW_WATER_MARK) {
+        return resolve();
+      }
+
       this.dataChannel.bufferedAmountLowThreshold = LOW_WATER_MARK;
-      const onLow = () => {
-        this.dataChannel.removeEventListener('bufferedamountlow', onLow);
-        resolve();
+      let done = false;
+
+      const cleanup = () => {
+        if (!done) {
+          done = true;
+          if (this.dataChannel) {
+            this.dataChannel.removeEventListener('bufferedamountlow', onLow);
+          }
+          if (timer) clearInterval(timer);
+          resolve();
+        }
       };
+
+      const onLow = () => cleanup();
+
+      // Backup polling timer in case browser does not fire 'bufferedamountlow'
+      const timer = setInterval(() => {
+        if (!this.dataChannel || this.dataChannel.bufferedAmount <= LOW_WATER_MARK) {
+          cleanup();
+        }
+      }, 50);
+
       this.dataChannel.addEventListener('bufferedamountlow', onLow);
     });
   }
+
 
   _updateProgressStats() {
     const now = Date.now();
