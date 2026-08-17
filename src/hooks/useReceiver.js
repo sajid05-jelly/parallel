@@ -93,6 +93,11 @@ export default function useReceiver() {
     }
   }, []);
 
+  const saveAllItems = useCallback(async () => {
+    if (transportRef.current) {
+      return await transportRef.current.saveAllItems();
+    }
+  }, []);
 
   return {
     status,
@@ -103,7 +108,9 @@ export default function useReceiver() {
     connect,
     acceptTransfer,
     cancel,
-    saveFileItem
+    saveFileItem,
+    saveAllItems
   };
 }
+
 

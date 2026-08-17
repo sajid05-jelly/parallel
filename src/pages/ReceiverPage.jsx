@@ -71,8 +71,24 @@ export default function ReceiverPage({ token, keyString }) {
     error,
     connect,
     acceptTransfer,
-    saveFileItem
+    saveFileItem,
+    saveAllItems
   } = useReceiver();
+
+  const [isSavingAll, setIsSavingAll] = useState(false);
+
+  const handleSaveAll = async () => {
+    if (isSavingAll) return;
+    setIsSavingAll(true);
+    try {
+      await saveAllItems();
+    } catch (e) {
+      console.error('Save all error:', e);
+    } finally {
+      setIsSavingAll(false);
+    }
+  };
+
 
 
   useEffect(() => {
@@ -224,12 +240,32 @@ export default function ReceiverPage({ token, keyString }) {
 
 
 
+                {files.length > 1 && (
+                  <button
+                    onClick={handleSaveAll}
+                    disabled={isSavingAll}
+                    className="w-full py-3 mb-3 rounded-xl bg-gradient-to-r from-[#D4A574] to-[#5BA5A5] hover:opacity-95 text-[#090A0A] font-semibold text-sm tracking-wide transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg"
+                  >
+                    {isSavingAll ? (
+                      <>
+                        <span className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin"></span>
+                        Saving All Files…
+                      </>
+                    ) : (
+                      <>
+                        <span>📦</span> Save All ({files.length} Files)
+                      </>
+                    )}
+                  </button>
+                )}
+
                 <button 
                   onClick={() => window.location.href = '/'}
                   className="w-full py-3 rounded-xl bg-white/10 hover:bg-white/20 text-[#F5F5F2] font-medium text-sm transition-colors"
                 >
                   Done
                 </button>
+
 
 
               </GlassCard>
