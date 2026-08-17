@@ -344,8 +344,6 @@ export class WebRTCReceiverTransport {
     if (!this.completedFiles) this.completedFiles = [];
     this.completedFiles.push({ file, blob, filename: info.name, mimeType });
 
-    this._triggerBrowserDownload(blob, info.name, file);
-
     // Free memory for raw chunks immediately
     this.receivedFiles.delete(fileId);
   }
@@ -353,37 +351,6 @@ export class WebRTCReceiverTransport {
   saveFileItem(item) {
     if (!item) return Promise.reject(new Error('File not available'));
     return this._triggerBrowserDownload(item.blob, item.filename, item.file, true);
-  }
-
-  async saveAllItems() {
-    if (!this.completedFiles || this.completedFiles.length === 0) return;
-
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-    const allFileObjs = this.completedFiles.map(item => item.file).filter(Boolean);
-
-    // If iOS supports multi-file Web Share API, open native Share Sheet for all files together
-    if (isIOS && navigator.share && navigator.canShare && allFileObjs.length > 0) {
-      try {
-        if (navigator.canShare({ files: allFileObjs })) {
-          await navigator.share({
-            files: allFileObjs,
-            title: 'PARALLEL Received Files',
-          });
-          return;
-        }
-      } catch (err) {
-        if (err.name === 'AbortError' || err.message?.includes('cancel') || err.message?.includes('cancellation')) {
-          console.log('[ReceiverTransport] User cancelled multi-file iOS share sheet.');
-          return;
-        }
-        console.warn('[ReceiverTransport] Multi-file share failed, falling back to individual file saves:', err);
-      }
-    }
-
-    // Fallback: trigger save/download sequentially for all files
-    for (const item of this.completedFiles) {
-      await this._triggerBrowserDownload(item.blob, item.filename, item.file, true);
-    }
   }
 
   async _triggerBrowserDownload(blob, filename, fileObj, forceManual = false) {
@@ -414,6 +381,7 @@ export class WebRTCReceiverTransport {
         console.warn('[ReceiverTransport] Native share error, falling back to Blob download:', err);
       }
     }
+
 
 
     // Standard Desktop / Android Blob Download Fallback
