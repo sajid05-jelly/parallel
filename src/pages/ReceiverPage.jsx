@@ -149,22 +149,30 @@ export default function ReceiverPage({ token, keyString }) {
                 <h2 className="text-3xl font-light mb-2 text-[#F5F5F2]">Transfer Complete</h2>
                 <p className="text-[#9CA3A2] text-sm mb-4">{files.length} {files.length === 1 ? 'file' : 'files'} received & verified.</p>
                 
-                <div className="w-full max-h-48 overflow-y-auto space-y-2 mb-6 text-left">
-                  {files.map((file, idx) => (
-                    <div key={idx} className="flex items-center justify-between p-3 rounded-xl bg-white/[0.04] border border-white/[0.08]">
-                      <div className="min-w-0 pr-2">
-                        <p className="text-xs font-medium text-[#F5F5F2] truncate">{file.name}</p>
-                        <p className="text-[10px] text-[#9CA3A2]">{formatFileSize(file.size)}</p>
+                <div className="w-full max-h-56 overflow-y-auto space-y-2.5 mb-6 text-left">
+                  {files.map((file, idx) => {
+                    const isImage = file.type?.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|heic)$/i.test(file.name);
+                    const isVideo = file.type?.startsWith('video/') || /\.(mp4|mov|avi|mkv|webm)$/i.test(file.name);
+                    
+                    const btnLabel = isImage ? 'Save Photo' : isVideo ? 'Save Video' : 'Save File';
+
+                    return (
+                      <div key={idx} className="flex items-center justify-between p-3 rounded-xl bg-white/[0.04] border border-white/[0.08]">
+                        <div className="min-w-0 pr-3">
+                          <p className="text-xs font-medium text-[#F5F5F2] truncate">{file.name}</p>
+                          <p className="text-[10px] text-[#9CA3A2]">{formatFileSize(file.size)}</p>
+                        </div>
+                        <button
+                          onClick={() => saveFileItem(idx)}
+                          className="px-3.5 py-1.5 rounded-lg bg-[#5BA5A5]/25 hover:bg-[#5BA5A5]/40 text-[#5BA5A5] hover:text-white text-xs font-semibold transition-all flex-shrink-0 flex items-center gap-1.5 border border-[#5BA5A5]/30"
+                        >
+                          <span>📥</span> {btnLabel}
+                        </button>
                       </div>
-                      <button
-                        onClick={() => saveFileItem(idx)}
-                        className="px-3 py-1.5 rounded-lg bg-[#5BA5A5]/20 hover:bg-[#5BA5A5]/30 text-[#5BA5A5] text-xs font-medium transition-colors flex-shrink-0"
-                      >
-                        Save / Share
-                      </button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
+
 
                 <button 
                   onClick={() => window.location.href = '/'}
