@@ -416,6 +416,7 @@ export class WebRTCTransport {
         return resolve();
       }
       const check = () => {
+        this._updateProgressStats();
         if (!this.dataChannel || this.dataChannel.bufferedAmount === 0 || this.isTransferCancelled) {
           resolve();
         } else {
@@ -514,8 +515,9 @@ export class WebRTCTransport {
 
       const onLow = () => cleanup();
 
-      // Backup polling in case browser doesn't fire 'bufferedamountlow'
+      // Backup polling in case browser doesn't fire 'bufferedamountlow' and to update UI progress while draining
       const timer = setInterval(() => {
+        this._updateProgressStats();
         if (!this.dataChannel || this.dataChannel.bufferedAmount <= lowWaterMark) {
           cleanup();
         }
@@ -529,20 +531,34 @@ export class WebRTCTransport {
     const now = Date.now();
     const dt = (now - this._lastUpdate) / 1000;
 
-    if (dt >= 0.5) {
-      const currentSpeed = this._bytesSinceLastUpdate / dt;
+    // Initialize track variable for actual sent bytes if undefined
+    if (this._lastActualSentBytes === undefined) {
+      this._lastActualSentBytes = 0;
+    }
+
+    // Update UI every 100ms for smooth progress
+    if (dt >= 0.1) {
+      // Calculate actual bytes transferred over the wire
+      const buffered = this.dataChannel ? this.dataChannel.bufferedAmount : 0;
+      const actualSentBytes = Math.max(0, this.progress.sentBytes - buffered);
+
+      // Speed calculation (bytes per second over wire)
+      const currentSpeed = Math.max(0, actualSentBytes - this._lastActualSentBytes) / dt;
+      
       this._speedHistory.push(currentSpeed);
-      if (this._speedHistory.length > 5) this._speedHistory.shift();
+      if (this._speedHistory.length > 10) this._speedHistory.shift();
 
       const rollingSpeed = this._speedHistory.reduce((a, b) => a + b, 0) / this._speedHistory.length;
       this.progress.speed = rollingSpeed;
 
-      const remainingBytes = this.progress.totalBytes - this.progress.sentBytes;
+      const remainingBytes = this.progress.totalBytes - actualSentBytes;
       this.progress.eta = rollingSpeed > 0 ? remainingBytes / rollingSpeed : 0;
-      this.progress.percentage = Math.min(100, (this.progress.sentBytes / this.progress.totalBytes) * 100);
+      
+      // Calculate true overall percentage
+      this.progress.percentage = Math.min(100, Math.max(0, (actualSentBytes / this.progress.totalBytes) * 100));
 
       this._lastUpdate = now;
-      this._bytesSinceLastUpdate = 0;
+      this._lastActualSentBytes = actualSentBytes;
 
       this.onProgress({ ...this.progress });
     }

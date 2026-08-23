@@ -81,13 +81,22 @@ export default function ReceiverPage({ token, keyString }) {
     // Use the Web Share API so user gets the native iOS Share Sheet.
     if (ios && navigator.share && navigator.canShare) {
       try {
-        // item.file is a proper File object with original name + MIME type
+        // iOS requires a precise type to allow "Save Image/Video" in the Share Sheet.
+        // It also often fails if `title` or `text` is shared alongside the file.
+        const fallbackType = item.filename.toLowerCase().endsWith('.jpg') || item.filename.toLowerCase().endsWith('.jpeg') ? 'image/jpeg' 
+                           : item.filename.toLowerCase().endsWith('.png') ? 'image/png'
+                           : item.filename.toLowerCase().endsWith('.mp4') ? 'video/mp4'
+                           : 'application/octet-stream';
+                           
+        const mimeType = item.mimeType || item.blob.type || fallbackType;
         const fileObj = item.file || new File([item.blob], item.filename, {
-          type: item.mimeType || item.blob.type || 'application/octet-stream',
+          type: mimeType,
           lastModified: Date.now(),
         });
+        
         if (navigator.canShare({ files: [fileObj] })) {
-          await navigator.share({ files: [fileObj], title: item.filename });
+          // IMPORTANT: Share ONLY the file. Adding title/url forces iOS to treat it as mixed content, breaking "Save Image".
+          await navigator.share({ files: [fileObj] });
           return;
         }
       } catch (err) {
