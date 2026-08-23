@@ -71,16 +71,36 @@ export function formatDuration(seconds) {
 }
 
 export function getFileTypeCategory(file) {
-  if (!file || !file.type) return 'other';
-  if (file.type.startsWith('image/')) return 'image';
-  if (file.type.startsWith('video/')) return 'video';
-  if (file.type.startsWith('audio/')) return 'audio';
-  
-  const documentTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument', 'text/plain'];
-  if (documentTypes.some(type => file.type.includes(type))) return 'document';
-  
-  const archiveTypes = ['application/zip', 'application/x-rar', 'application/gzip', 'application/x-tar'];
-  if (archiveTypes.some(type => file.type.includes(type))) return 'archive';
+  if (!file) return 'other';
+
+  // 1. Check MIME type first
+  if (file.type) {
+    if (file.type.startsWith('image/')) return 'image';
+    if (file.type.startsWith('video/')) return 'video';
+    if (file.type.startsWith('audio/')) return 'audio';
+    
+    const documentTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument', 'text/plain'];
+    if (documentTypes.some(type => file.type.includes(type))) return 'document';
+    
+    const archiveTypes = ['application/zip', 'application/x-rar', 'application/gzip', 'application/x-tar'];
+    if (archiveTypes.some(type => file.type.includes(type))) return 'archive';
+  }
+
+  // 2. Fallback to extension if MIME type is missing or unhelpful
+  if (file.name) {
+    const ext = file.name.split('.').pop().toLowerCase();
+    const videoExts = ['mp4', 'mov', 'm4v', 'webm', 'avi', 'mkv', 'flv', 'wmv'];
+    if (videoExts.includes(ext)) return 'video';
+    
+    const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif', 'svg'];
+    if (imageExts.includes(ext)) return 'image';
+    
+    const audioExts = ['mp3', 'wav', 'ogg', 'm4a', 'aac'];
+    if (audioExts.includes(ext)) return 'audio';
+    
+    const docExts = ['pdf', 'doc', 'docx', 'txt', 'rtf'];
+    if (docExts.includes(ext)) return 'document';
+  }
 
   return 'other';
 }

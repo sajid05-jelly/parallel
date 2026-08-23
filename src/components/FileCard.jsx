@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { formatFileSize } from '../config/constants';
 
 const FileCard = ({ file, onRemove, index }) => {
-  const isImage = file.type.startsWith('image/') && file.preview;
+  const isImage = file.type && file.type.startsWith('image/') && file.preview;
   
   const getIcon = () => {
     if (file.category === 'video') {

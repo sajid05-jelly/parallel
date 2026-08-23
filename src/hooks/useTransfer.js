@@ -103,15 +103,7 @@ export function useTransfer() {
           break;
         }
 
-        if (file.size > MAX_FILE_SIZE) {
-          errors.push(`"${file.name}" exceeds the ${formatFileSize(MAX_FILE_SIZE)} limit.`);
-          continue;
-        }
 
-        if (currentSize + file.size > MAX_TRANSFER_SIZE) {
-          errors.push(`Adding "${file.name}" would exceed the ${formatFileSize(MAX_TRANSFER_SIZE)} total limit.`);
-          continue;
-        }
 
         let preview = null;
         if (file.type && file.type.startsWith('image/')) {
