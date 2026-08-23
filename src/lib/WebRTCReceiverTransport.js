@@ -107,14 +107,17 @@ export class WebRTCReceiverTransport {
     // Notify sender that receiver claimed the portal
     await this.signaling.sendSignal('RECEIVER_CLAIMED', { credential: receiverCredential });
 
-    // 30-second debug connection timeout trigger
+    // Connection timeout: only fire if we never got past negotiation
+    // WAITING = manifest received (data channel working), TRANSFERRING/COMPLETED = success — never error in these states
     this._connectionTimeout = setTimeout(() => {
-      if (this.status !== 'CONNECTED' && this.status !== 'TRANSFERRING' && this.status !== 'COMPLETED') {
-        console.warn('[ReceiverTransport] Connection timed out after 30s');
-        this.onError(new Error('Couldn\'t establish connection. Connection timed out after 30s. Check your network or firewall settings.'));
+      const safeStates = ['CONNECTED', 'WAITING', 'TRANSFERRING', 'COMPLETED'];
+      if (!safeStates.includes(this.status)) {
+        console.warn('[ReceiverTransport] Connection timed out after 45s — status:', this.status);
+        this.onError(new Error('Could not connect. Check your network and try again.'));
         this._updateStatus('FAILED');
       }
-    }, 30000);
+    }, 45000);
+
 
 
     return { session: this.session };
@@ -205,10 +208,16 @@ export class WebRTCReceiverTransport {
     if (msg.isControl) {
       if (msg.type === MESSAGE_TYPES.MANIFEST) {
         console.log('[ReceiverTransport] Received Manifest:', msg.payload);
+        // Manifest received = data channel is working = connection is good → cancel timeout
+        if (this._connectionTimeout) {
+          clearTimeout(this._connectionTimeout);
+          this._connectionTimeout = null;
+        }
         this.manifest = msg.payload;
         this.progress.totalFiles = this.manifest.totalFiles;
         this.progress.totalBytes = this.manifest.totalBytes;
         this._updateStatus('WAITING'); // Waiting for user to click "Receive Everything"
+
       } else if (msg.type === MESSAGE_TYPES.FILE_START) {
         console.log(`[ReceiverTransport] File transfer started: ${msg.payload.fileId}`);
         const fileInfo = this.manifest.files.find(f => f.id === msg.payload.fileId);

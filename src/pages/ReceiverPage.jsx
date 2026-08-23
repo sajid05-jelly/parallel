@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import useReceiver from '../hooks/useReceiver';
 import ParallelBackground from '../components/ParallelBackground';
@@ -8,7 +8,27 @@ import PortalAnimation from '../components/PortalAnimation';
 import ErrorState from '../components/ErrorState';
 import { formatFileSize, getFileIcon, getFileTypeCategory } from '../config/constants';
 
+// Detect iOS Safari / iOS Chrome
+function isIOSDevice() {
+  return (
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  );
+}
+
 function FileDownloadItem({ file, onDownload }) {
+  const [busy, setBusy] = useState(false);
+
+  const handleClick = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await onDownload();
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="flex items-center justify-between p-3 rounded-xl bg-white/[0.04] border border-white/[0.08]">
       <div className="min-w-0 pr-3">
@@ -17,10 +37,18 @@ function FileDownloadItem({ file, onDownload }) {
       </div>
       <button
         type="button"
-        onClick={onDownload}
-        className="px-3.5 py-1.5 rounded-lg bg-[#5BA5A5]/25 hover:bg-[#5BA5A5]/40 text-[#5BA5A5] hover:text-white text-xs font-semibold transition-all flex-shrink-0 flex items-center gap-1.5 border border-[#5BA5A5]/30 cursor-pointer"
+        onClick={handleClick}
+        disabled={busy}
+        className="px-3.5 py-1.5 rounded-lg bg-[#5BA5A5]/25 hover:bg-[#5BA5A5]/40 text-[#5BA5A5] hover:text-white text-xs font-semibold transition-all flex-shrink-0 flex items-center gap-1.5 border border-[#5BA5A5]/30 cursor-pointer disabled:opacity-60"
       >
-        Download ↓
+        {busy ? (
+          <>
+            <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+            Saving…
+          </>
+        ) : (
+          'Download ↓'
+        )}
       </button>
     </div>
   );
@@ -35,12 +63,41 @@ export default function ReceiverPage({ token, keyString }) {
     error,
     connect,
     acceptTransfer,
-    getCompletedFileBlob
+    getCompletedFileBlob,
+    saveFileItem,
   } = useReceiver();
 
-  const downloadFile = (idx) => {
+  // Called when the user taps Download for a specific file index
+  const downloadFile = useCallback(async (idx) => {
     const item = getCompletedFileBlob(idx);
-    if (!item) return;
+    if (!item) {
+      console.warn('[ReceiverPage] No blob found for index', idx);
+      return;
+    }
+
+    const ios = isIOSDevice();
+
+    // iOS Safari/Chrome: <a download> is silently ignored.
+    // Use the Web Share API so user gets the native iOS Share Sheet.
+    if (ios && navigator.share && navigator.canShare) {
+      try {
+        // item.file is a proper File object with original name + MIME type
+        const fileObj = item.file || new File([item.blob], item.filename, {
+          type: item.mimeType || item.blob.type || 'application/octet-stream',
+          lastModified: Date.now(),
+        });
+        if (navigator.canShare({ files: [fileObj] })) {
+          await navigator.share({ files: [fileObj], title: item.filename });
+          return;
+        }
+      } catch (err) {
+        // User dismissed the share sheet — not an error
+        if (err.name === 'AbortError') return;
+        console.warn('[ReceiverPage] iOS share failed, falling back to blob URL:', err);
+      }
+    }
+
+    // Android / Desktop: standard Blob URL download
     const url = URL.createObjectURL(item.blob);
     const a = document.createElement('a');
     a.href = url;
@@ -50,11 +107,7 @@ export default function ReceiverPage({ token, keyString }) {
     a.click();
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 60000);
-  };
-
-
-
-
+  }, [getCompletedFileBlob]);
 
   useEffect(() => {
     if (token && keyString) {
@@ -183,7 +236,7 @@ export default function ReceiverPage({ token, keyString }) {
                   </svg>
                 </motion.div>
                 <h2 className="text-3xl font-light mb-2 text-[#F5F5F2]">Transfer Complete</h2>
-                <p className="text-[#9CA3A2] text-sm mb-4">{files.length} {files.length === 1 ? 'file' : 'files'} received & verified.</p>
+                <p className="text-[#9CA3A2] text-sm mb-4">{files.length} {files.length === 1 ? 'file' : 'files'} received &amp; verified.</p>
                 
                 <div className="w-full max-h-56 overflow-y-auto space-y-2.5 mb-6 text-left">
                   {files.map((file, idx) => (
@@ -195,18 +248,12 @@ export default function ReceiverPage({ token, keyString }) {
                   ))}
                 </div>
 
-
-
-
                 <button 
                   onClick={() => window.location.href = '/'}
                   className="w-full py-3 rounded-xl bg-white/10 hover:bg-white/20 text-[#F5F5F2] font-medium text-sm transition-colors"
                 >
                   Done
                 </button>
-
-
-
 
               </GlassCard>
             </motion.div>
