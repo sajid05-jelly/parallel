@@ -94,7 +94,13 @@ export default function useReceiver() {
   }, []);
 
   const getCompletedFileBlob = useCallback((index) => {
-    return transportRef.current?.completedFiles?.[index] || null;
+    const filesMeta = transportRef.current?.manifest?.files;
+    const completed = transportRef.current?.completedFiles;
+    if (!completed || !filesMeta) return null;
+    // Match by filename since assembly order may differ from manifest order
+    const filename = filesMeta[index]?.name;
+    if (!filename) return null;
+    return completed.find(f => f.filename === filename) || null;
   }, []);
 
   const saveAllItems = useCallback(async () => {

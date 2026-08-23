@@ -193,16 +193,8 @@ export class WebRTCReceiverTransport {
     };
   }
 
-  async _handleOffer(offerSdp) {
-    if (!this.peerConnection) return;
 
-    await this.peerConnection.setRemoteDescription(new RTCSessionDescription(offerSdp));
-    const answer = await this.peerConnection.createAnswer();
-    await this.peerConnection.setLocalDescription(answer);
 
-    console.log('[ReceiverTransport] Sending Answer SDP to sender');
-    await this.signaling.sendSignal('ANSWER', answer);
-  }
 
   /**
    * Handle incoming DataChannel messages (Manifest, Control, Binary Chunks)
@@ -306,22 +298,18 @@ export class WebRTCReceiverTransport {
     const fileRecord = this.receivedFiles.get(fileId);
     if (!fileRecord) return;
 
-    const { info, chunks, receivedBytes } = fileRecord;
-    
-    // Integrity check 1: Ensure total chunk count matches expected count
+    const { info, chunks } = fileRecord;
+
+    // Integrity check: chunk count
     if (chunks.size !== info.totalChunks) {
-      console.error(`[ReceiverTransport] Integrity check failed for ${info.name}: Chunks received (${chunks.size}) != expected (${info.totalChunks})`);
-      this.onError(new Error(`Transfer incomplete for ${info.name}. Missing chunks.`));
+      console.error(`[ReceiverTransport] Integrity check failed for ${info.name}: Chunks (${chunks.size}) != expected (${info.totalChunks})`);
+      if (!this.isCompleted) {
+        this.onError(new Error(`Transfer incomplete for ${info.name}. Missing chunks.`));
+      }
       return;
     }
 
-    // Integrity check 2: Ensure received total bytes exactly match original file size
-    if (receivedBytes !== info.size) {
-      console.error(`[ReceiverTransport] Integrity check failed for ${info.name}: Received bytes (${receivedBytes}) != expected (${info.size})`);
-      this.onError(new Error(`Transfer incomplete for ${info.name}. Byte size mismatch.`));
-      return;
-    }
-
+    // Assemble sorted chunks
     const sortedChunks = [];
     for (let i = 0; i < info.totalChunks; i++) {
       const chunk = chunks.get(i);
@@ -330,23 +318,26 @@ export class WebRTCReceiverTransport {
 
     const mimeType = info.type || 'application/octet-stream';
     const blob = new Blob(sortedChunks, { type: mimeType });
-    
-    // Additional Blob size verification
+
+    // Blob size verification
     if (blob.size !== info.size) {
-      console.error(`[ReceiverTransport] Blob size verification failed for ${info.name}: Blob size (${blob.size}) != expected (${info.size})`);
-      this.onError(new Error(`Transfer incomplete for ${info.name}. Corrupted binary assembly.`));
+      console.error(`[ReceiverTransport] Blob size mismatch for ${info.name}: ${blob.size} != ${info.size}`);
+      if (!this.isCompleted) {
+        this.onError(new Error(`Transfer incomplete for ${info.name}. Corrupted binary assembly.`));
+      }
       return;
     }
 
-    console.log(`[ReceiverTransport] File integrity verified 100% for ${info.name} (${blob.size} bytes)`);
+    console.log(`[ReceiverTransport] File verified: ${info.name} (${blob.size} bytes)`);
     const file = new File([blob], info.name, { type: mimeType, lastModified: Date.now() });
 
     if (!this.completedFiles) this.completedFiles = [];
-    this.completedFiles.push({ file, blob, filename: info.name, mimeType });
+    this.completedFiles.push({ file, blob, filename: info.name, mimeType, fileId });
 
-    // Free memory for raw chunks immediately
+    // Free raw chunk memory immediately
     this.receivedFiles.delete(fileId);
   }
+
 
   saveFileItem(item) {
     if (!item) return Promise.reject(new Error('File not available'));
