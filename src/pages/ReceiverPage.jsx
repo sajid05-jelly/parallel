@@ -201,9 +201,19 @@ export default function ReceiverPage({ token, keyString }) {
                 <div className="mt-auto pt-4 border-t border-white/[0.08]">
                   <button
                     onClick={acceptTransfer}
-                    className="w-full min-h-[52px] py-3.5 rounded-xl font-semibold text-[#090A0A] bg-gradient-to-r from-[#D4A574] via-[#B89B8A] to-[#5BA5A5] hover:opacity-95 transition-all active:scale-[0.98] tracking-wide text-sm uppercase"
+                    className="relative overflow-hidden w-full min-h-[52px] py-3.5 rounded-xl bg-gradient-to-r from-[#5BA5A5]/10 via-[#D4A574]/10 to-[#5BA5A5]/10 border border-[#5BA5A5]/20 backdrop-blur-md text-[#F3F4F6] font-medium text-[13px] uppercase tracking-widest hover:border-[#D4A574]/40 hover:bg-white/[0.05] hover:shadow-[0_0_20px_rgba(212,165,116,0.15)] active:scale-[0.98] transition-all duration-300 flex items-center justify-center group"
                   >
-                    RECEIVE EVERYTHING
+                    {/* Crystal inner reflection */}
+                    <div className="absolute inset-0 bg-gradient-to-b from-white/[0.08] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none rounded-xl"></div>
+                    
+                    <span className="relative z-10 flex items-center justify-center gap-2.5">
+                      <svg className="text-[#5BA5A5] group-hover:translate-y-[1px] transition-transform duration-300" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                      </svg>
+                      RECEIVE EVERYTHING
+                    </span>
                   </button>
                 </div>
               </GlassCard>
