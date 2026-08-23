@@ -164,7 +164,15 @@ export function useTransfer() {
     });
   }, []);
 
+  const isCreatingRef = useRef(false);
+
   async function _doCreatePortal(currentFiles) {
+    if (isCreatingRef.current || (transportRef.current && transportRef.current.status !== 'FAILED' && transportRef.current.status !== 'CANCELLED')) {
+      console.log('[useTransfer] Ignoring duplicate portal creation request.');
+      return;
+    }
+    
+    isCreatingRef.current = true;
     try {
       setStatus('CREATING');
       setError(null);
@@ -201,10 +209,9 @@ export function useTransfer() {
       const detail = err?.message || 'We couldn\'t create the temporary connection.';
       setError(`Couldn't open portal. ${detail}`);
       setStatus('FAILED');
+    } finally {
+      isCreatingRef.current = false;
     }
-
-
-
   }
 
   const cancelTransfer = useCallback(() => {
@@ -238,6 +245,28 @@ export function useTransfer() {
     setMode(null);
   }, [clearFiles]);
 
+  const retry = useCallback(() => {
+    if (transportRef.current) {
+      transportRef.current.cancelPortal();
+    }
+    transportRef.current = null;
+    setStatus('IDLE'); // This allows SenderPage to show the mode selection or start over without losing files
+    setProgress({
+      totalBytes: 0,
+      sentBytes: 0,
+      percentage: 0,
+      currentFile: null,
+      totalFiles: 0,
+      filesSent: 0,
+      speed: 0,
+      eta: 0,
+    });
+    setTransferUrl(null);
+    setToken(null);
+    setError(null);
+    setQrExpiry(null);
+  }, []);
+
   return {
     files,
     status,
@@ -254,6 +283,7 @@ export function useTransfer() {
     createPortal,
     cancelTransfer,
     reset,
+    retry,
   };
 }
 

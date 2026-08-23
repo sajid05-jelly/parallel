@@ -18,8 +18,25 @@ export default function useReceiver() {
   const [error, setError] = useState(null);
 
   const transportRef = useRef(null);
+  const connectLock = useRef(false);
 
   const connect = useCallback(async (token, keyString) => {
+    if (connectLock.current) {
+      console.log('[useReceiver] Ignoring duplicate connect attempt (already in progress).');
+      return;
+    }
+    
+    // Ignore duplicate connect calls if we are already connected or negotiating
+    if (transportRef.current && (
+      transportRef.current.status === 'CONNECTED' ||
+      transportRef.current.status === 'NEGOTIATING' ||
+      transportRef.current.status === 'TRANSFERRING'
+    )) {
+      console.log('[useReceiver] Ignoring duplicate connect attempt (already connected).');
+      return;
+    }
+    
+    connectLock.current = true;
     try {
       setStatus('LOADING');
       setError(null);
@@ -65,6 +82,8 @@ export default function useReceiver() {
         setStatus('ERROR');
         setError(msg || 'Could not establish connection. Check your internet connection.');
       }
+    } finally {
+      connectLock.current = false;
     }
 
   }, []);

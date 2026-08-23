@@ -27,7 +27,8 @@ export default function SenderPage() {
     clearFiles,
     createPortal,
     cancelTransfer,
-    reset
+    reset,
+    retry
   } = useTransfer();
 
   const handleFilesSelected = (fileList) => {
@@ -257,7 +258,7 @@ export default function SenderPage() {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
         >
-          <ErrorState type={errorType} message={error} onAction={reset} actionLabel="Try Again" />
+          <ErrorState type={errorType} message={error} onAction={retry} actionLabel="Try Again" />
         </motion.div>
       );
     }
