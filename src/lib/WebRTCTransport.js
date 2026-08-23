@@ -274,15 +274,8 @@ export class WebRTCTransport {
     this.dataChannel.onopen = () => {
       console.log('[WebRTCTransport] RTCDataChannel opened successfully');
 
-      // FIX: Negotiate chunk size ONCE here, then use it consistently for both manifest & sending
-      const maxMsgSize = this.dataChannel.maxMessageSize;
-      const MAX_CHUNK_SIZE = 262144; // 256KB for much higher throughput
-      if (maxMsgSize && maxMsgSize > 0) {
-        // Stay well below browser SCTP limit: subtract 512 bytes for our binary header overhead
-        this._negotiatedChunkSize = Math.min(MAX_CHUNK_SIZE, Math.max(16384, maxMsgSize - 512));
-      } else {
-        this._negotiatedChunkSize = 65536; // 64KB fallback
-      }
+      // ALWAYS use 16KB to ensure universal safe compatibility
+      this._negotiatedChunkSize = 16384; 
       console.log(`[WebRTCTransport] Negotiated chunk size: ${this._negotiatedChunkSize} bytes`);
 
       // Update totalChunks in each file with the negotiated chunk size so manifest is consistent
@@ -502,9 +495,10 @@ export class WebRTCTransport {
     // Use the SAME totalChunks as in the manifest (already set correctly)
     const totalChunks = fileInfo.totalChunks;
 
-    const DYNAMIC_HIGH_WATER_MARK = 8 * 1024 * 1024; // 8MB to keep pipe full
-    const DYNAMIC_LOW_WATER_MARK = 2 * 1024 * 1024;  // 2MB to resume early
+    const DYNAMIC_HIGH_WATER_MARK = 1024 * 1024; // 1MB to prevent SCTP socket crash
+    const DYNAMIC_LOW_WATER_MARK = 256 * 1024;   // 256KB
 
+    this.dataChannel.bufferedAmountLowThreshold = DYNAMIC_LOW_WATER_MARK;
     this._lastAckBytes = 0; // reset for the new file
 
     for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
@@ -515,9 +509,9 @@ export class WebRTCTransport {
         await this._waitForBufferDrain(DYNAMIC_LOW_WATER_MARK);
       }
 
-      // 2. Application-level Flow Control window (16MB maximum unacknowledged)
+      // 2. Application-level Flow Control window (4MB maximum unacknowledged)
+      const MAX_IN_FLIGHT = 4 * 1024 * 1024;
       const start = chunkIndex * chunkSize;
-      const MAX_IN_FLIGHT = 16 * 1024 * 1024;
       while ((start - this._lastAckBytes) > MAX_IN_FLIGHT) {
         if (this.isTransferCancelled || this.status === 'FAILED') break;
         this._updateProgressStats();
