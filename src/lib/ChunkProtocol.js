@@ -13,7 +13,9 @@ export const MESSAGE_TYPES = {
   CANCEL: 'CANCEL',
   ERROR: 'ERROR',
   PING: 'PING',
-  PONG: 'PONG'
+  PONG: 'PONG',
+  ACK: 'ACK',
+  FILE_COMPLETE: 'FILE_COMPLETE'
 };
 
 

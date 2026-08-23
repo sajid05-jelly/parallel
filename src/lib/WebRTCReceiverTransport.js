@@ -184,8 +184,15 @@ export class WebRTCReceiverTransport {
         }
         if (!this.isCompleted && this.status !== 'COMPLETED') {
           console.error('[ReceiverTransport] PeerConnection failed. ICE state:', iceState);
-          this.onError(new Error('WebRTC connection failed. Please check your network and try again.'));
-          this._updateStatus('FAILED');
+          
+          if (this._recoveryTimeout) clearTimeout(this._recoveryTimeout);
+          this._recoveryTimeout = setTimeout(() => {
+            if (this.isTransferCancelled || this.status === 'COMPLETED') return;
+            if (this.peerConnection?.iceConnectionState === 'connected' || this.peerConnection?.iceConnectionState === 'completed') return;
+
+            this.onError(new Error('WebRTC connection failed. Please check your network and try again.'));
+            this._updateStatus('FAILED');
+          }, 30000); // 30-second recovery grace period
         }
       } else if (state === 'disconnected') {
         console.warn('[ReceiverTransport] PeerConnection disconnected (may self-recover)');
@@ -292,6 +299,11 @@ export class WebRTCReceiverTransport {
         console.log(`[ReceiverTransport] FILE_END: ${fileId}`);
         await this._assembleFile(fileId);
         this.progress.filesReceived++;
+        
+        if (this.dataChannel && this.dataChannel.readyState === 'open') {
+          console.log(`[ReceiverTransport] Sending FILE_COMPLETE for ${fileId}`);
+          this.dataChannel.send(encodeControlMessage(MESSAGE_TYPES.FILE_COMPLETE, { fileId }));
+        }
 
       } else if (msg.type === MESSAGE_TYPES.TRANSFER_COMPLETE) {
         console.log('[ReceiverTransport] TRANSFER_COMPLETE received. Verifying all files...');
@@ -378,6 +390,18 @@ export class WebRTCReceiverTransport {
 
       this.progress.receivedBytes += plaintextPayload.byteLength;
       this._bytesSinceLastUpdate += plaintextPayload.byteLength;
+
+      // Flow control: Send ACK periodically to prevent sender from overflowing
+      if (fileRecord.lastAckBytes === undefined) fileRecord.lastAckBytes = 0;
+      if (fileRecord.plaintextBytes - fileRecord.lastAckBytes >= 4 * 1024 * 1024) { // Ack every 4MB
+        fileRecord.lastAckBytes = fileRecord.plaintextBytes;
+        if (this.dataChannel?.readyState === 'open') {
+          this.dataChannel.send(encodeControlMessage(MESSAGE_TYPES.ACK, {
+            fileId,
+            receivedBytes: fileRecord.plaintextBytes
+          }));
+        }
+      }
 
       this._updateProgressStats();
     } finally {

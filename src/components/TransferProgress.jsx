@@ -12,7 +12,16 @@ const TransferProgress = ({ progress = {}, direction = 'sending', status }) => {
   const speedDisplay = typeof speed === 'number' ? `${(speed / (1024 * 1024)).toFixed(1)} MB/s` : (speed || '0 MB/s');
 
   // Format ETA safely
-  const etaDisplay = typeof eta === 'number' ? `${Math.ceil(eta)}s remaining` : (eta || 'Calculating...');
+  let etaDisplay = 'Calculating...';
+  if (typeof eta === 'number') {
+    if (eta <= 0 && !isComplete) {
+      etaDisplay = '<1s remaining';
+    } else {
+      etaDisplay = `${Math.ceil(eta)}s remaining`;
+    }
+  } else if (eta) {
+    etaDisplay = eta;
+  }
 
   return (
     <div className="w-full max-w-md mx-auto">

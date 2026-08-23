@@ -246,12 +246,19 @@ export class WebRTCTransport {
         }
         if (!this.isCompleted && this.status !== 'COMPLETED') {
           console.error('[WebRTCTransport] PeerConnection failed. ICE state:', iceState);
-          if (this.mode === 'nearby') {
-            this.onError(new Error('Nearby Transfer: WebRTC connection failed. Ensure both devices are on the same Wi-Fi.'));
-          } else {
-            this.onError(new Error('WebRTC connection failed. This can happen on restrictive networks. Try the other transfer mode.'));
-          }
-          this._updateStatus('FAILED');
+          
+          if (this._recoveryTimeout) clearTimeout(this._recoveryTimeout);
+          this._recoveryTimeout = setTimeout(() => {
+            if (this.isTransferCancelled || this.status === 'COMPLETED') return;
+            if (this.peerConnection?.iceConnectionState === 'connected' || this.peerConnection?.iceConnectionState === 'completed') return;
+
+            if (this.mode === 'nearby') {
+              this.onError(new Error('Nearby Transfer: WebRTC connection failed. Ensure both devices are on the same Wi-Fi.'));
+            } else {
+              this.onError(new Error('WebRTC connection failed. This can happen on restrictive networks. Try the other transfer mode.'));
+            }
+            this._updateStatus('FAILED');
+          }, 30000); // 30-second recovery grace period
         }
       } else if (state === 'disconnected') {
         console.warn('[WebRTCTransport] PeerConnection disconnected (may self-recover)');
@@ -388,6 +395,15 @@ export class WebRTCTransport {
     } else if (msg.type === MESSAGE_TYPES.PONG) {
       // heartbeat acknowledged
       this._lastPong = Date.now();
+    } else if (msg.type === MESSAGE_TYPES.ACK) {
+      this._lastAckBytes = msg.payload?.receivedBytes || 0;
+      this._lastAckTime = Date.now();
+    } else if (msg.type === MESSAGE_TYPES.FILE_COMPLETE) {
+      if (this._fileCompleteTimeout) clearTimeout(this._fileCompleteTimeout);
+      if (this._currentFileCompleteResolve) {
+        this._currentFileCompleteResolve();
+        this._currentFileCompleteResolve = null;
+      }
     }
   }
 
@@ -409,27 +425,27 @@ export class WebRTCTransport {
         // Signal FILE_START
         this.dataChannel.send(encodeControlMessage(MESSAGE_TYPES.FILE_START, { fileId: fileInfo.id }));
 
+        
         await this._sendFileInChunks(fileInfo);
-
-        if (this.isTransferCancelled) break;
-
-        // Signal FILE_END — wait for buffer to drain first so receiver gets FILE_END after all chunks
-        await this._flushBuffer();
-
+        
         this.dataChannel.send(encodeControlMessage(MESSAGE_TYPES.FILE_END, { fileId: fileInfo.id }));
+        
+        // Wait for receiver to confirm file is fully assembled and verified
+        console.log(`[WebRTCTransport] Waiting for FILE_COMPLETE for ${fileInfo.id}...`);
+        await this._waitForFileComplete(fileInfo.id);
+
         this.progress.filesSent++;
         console.log(`[WebRTCTransport] File ${i + 1} finished: ${fileInfo.name}`);
       }
 
-      if (!this.isTransferCancelled) {
-        // Final buffer flush before TRANSFER_COMPLETE
+      if (!this.isTransferCancelled && this.status !== 'FAILED') {
+        // Wait for final buffer drain before finishing transfer
         await this._flushBuffer();
-
-        console.log('[WebRTCTransport] All files sent. Sending TRANSFER_COMPLETE...');
+        
+        console.log('[WebRTCTransport] All files sent and verified. Sending TRANSFER_COMPLETE...');
         this.dataChannel.send(encodeControlMessage(MESSAGE_TYPES.TRANSFER_COMPLETE));
 
-        // FIX: Do NOT call onComplete here. Wait for TRANSFER_COMPLETE_ACK from receiver.
-        // The sender stays TRANSFERRING until receiver confirms all files verified.
+        // Wait for TRANSFER_COMPLETE_ACK
         console.log('[WebRTCTransport] Waiting for TRANSFER_COMPLETE_ACK from receiver...');
       }
 
@@ -440,6 +456,19 @@ export class WebRTCTransport {
         this._updateStatus('FAILED');
       }
     }
+  }
+
+  _waitForFileComplete(fileId) {
+    return new Promise((resolve, reject) => {
+      this._currentFileCompleteResolve = resolve;
+      
+      // Safety timeout in case receiver silently drops
+      this._fileCompleteTimeout = setTimeout(() => {
+        if (!this.isTransferCancelled) {
+          reject(new Error('Timeout waiting for receiver to verify file.'));
+        }
+      }, 60000);
+    });
   }
 
   /**
@@ -476,15 +505,25 @@ export class WebRTCTransport {
     const DYNAMIC_HIGH_WATER_MARK = 8 * 1024 * 1024; // 8MB to keep pipe full
     const DYNAMIC_LOW_WATER_MARK = 2 * 1024 * 1024;  // 2MB to resume early
 
+    this._lastAckBytes = 0; // reset for the new file
+
     for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
       if (this.isTransferCancelled) break;
 
-      // Backpressure: pause if buffer exceeds DYNAMIC_HIGH_WATER_MARK
+      // 1. WebRTC DataChannel backpressure
       if (this.dataChannel.bufferedAmount > DYNAMIC_HIGH_WATER_MARK) {
         await this._waitForBufferDrain(DYNAMIC_LOW_WATER_MARK);
       }
 
+      // 2. Application-level Flow Control window (16MB maximum unacknowledged)
       const start = chunkIndex * chunkSize;
+      const MAX_IN_FLIGHT = 16 * 1024 * 1024;
+      while ((start - this._lastAckBytes) > MAX_IN_FLIGHT) {
+        if (this.isTransferCancelled || this.status === 'FAILED') break;
+        this._updateProgressStats();
+        await new Promise(r => setTimeout(r, 50)); // wait for receiver ACK
+      }
+
       const end = Math.min(file.size, start + chunkSize);
 
       const blobSlice = file.slice(start, end);
