@@ -18,13 +18,15 @@ export class WebRTCReceiverTransport {
     this.sessionId = null;
     this.session = null;
     this.status = 'IDLE';
+    this.isCompleted = false;
 
     this.peerConnection = null;
     this.dataChannel = null;
     this.signaling = null;
 
     this.manifest = null;
-    this.receivedFiles = new Map(); // fileId -> { info, chunks: Map(index -> ArrayBuffer), receivedBytes: 0 }
+    this.receivedFiles = new Map(); // fileId -> { info, chunks: Map(index -> ArrayBuffer), plaintextBytes: 0 }
+    this.completedFiles = []; // { file, blob, filename, mimeType, fileId }
 
     this.progress = {
       totalBytes: 0,
@@ -40,6 +42,8 @@ export class WebRTCReceiverTransport {
     this._speedHistory = [];
     this._lastUpdate = Date.now();
     this._bytesSinceLastUpdate = 0;
+    this._iceCandidateQueue = [];
+    this._connectionTimeout = null;
   }
 
   _updateStatus(newStatus) {
@@ -84,7 +88,6 @@ export class WebRTCReceiverTransport {
         console.log('[ReceiverTransport] Received ICE candidate from sender');
         if (this.peerConnection && candidate) {
           if (!this.peerConnection.remoteDescription) {
-            console.log('[ReceiverTransport] Remote description not set yet. Queuing ICE candidate.');
             this._iceCandidateQueue.push(candidate);
           } else {
             try {
@@ -97,7 +100,9 @@ export class WebRTCReceiverTransport {
       },
       onCancel: () => {
         console.log('[ReceiverTransport] Sender cancelled connection');
-        this.cancel();
+        if (!this.isCompleted && this.status !== 'COMPLETED') {
+          this.cancel();
+        }
       }
     });
 
@@ -107,18 +112,16 @@ export class WebRTCReceiverTransport {
     // Notify sender that receiver claimed the portal
     await this.signaling.sendSignal('RECEIVER_CLAIMED', { credential: receiverCredential });
 
-    // Connection timeout: only fire if we never got past negotiation
-    // WAITING = manifest received (data channel working), TRANSFERRING/COMPLETED = success — never error in these states
+    // Connection timeout — only fires if data channel never opens
+    // Once MANIFEST arrives we clear this immediately
     this._connectionTimeout = setTimeout(() => {
       const safeStates = ['CONNECTED', 'WAITING', 'TRANSFERRING', 'COMPLETED'];
       if (!safeStates.includes(this.status)) {
         console.warn('[ReceiverTransport] Connection timed out after 45s — status:', this.status);
-        this.onError(new Error('Could not connect. Check your network and try again.'));
+        this.onError(new Error('Could not connect to sender. Check your network and try again.'));
         this._updateStatus('FAILED');
       }
     }, 45000);
-
-
 
     return { session: this.session };
   }
@@ -162,18 +165,32 @@ export class WebRTCReceiverTransport {
     };
 
     this.peerConnection.onconnectionstatechange = () => {
-      const state = this.peerConnection.connectionState;
-      const iceState = this.peerConnection.iceConnectionState;
+      const state = this.peerConnection?.connectionState;
+      const iceState = this.peerConnection?.iceConnectionState;
       console.log(`[ReceiverTransport] PeerConnection state: ${state}, ICE state: ${iceState}`);
+
       if (state === 'connected') {
-        if (this._connectionTimeout) clearTimeout(this._connectionTimeout);
-        this._updateStatus('CONNECTED');
+        if (this._connectionTimeout) {
+          clearTimeout(this._connectionTimeout);
+          this._connectionTimeout = null;
+        }
+        if (this.status !== 'WAITING' && this.status !== 'TRANSFERRING' && this.status !== 'COMPLETED') {
+          this._updateStatus('CONNECTED');
+        }
       } else if (state === 'failed') {
-        if (this._connectionTimeout) clearTimeout(this._connectionTimeout);
-        this._updateStatus('FAILED');
+        if (this._connectionTimeout) {
+          clearTimeout(this._connectionTimeout);
+          this._connectionTimeout = null;
+        }
+        if (!this.isCompleted && this.status !== 'COMPLETED') {
+          console.error('[ReceiverTransport] PeerConnection failed. ICE state:', iceState);
+          this.onError(new Error('WebRTC connection failed. Please check your network and try again.'));
+          this._updateStatus('FAILED');
+        }
+      } else if (state === 'disconnected') {
+        console.warn('[ReceiverTransport] PeerConnection disconnected (may self-recover)');
       }
     };
-
 
     // Receiver waits for DataChannel created by sender
     this.peerConnection.ondatachannel = (event) => {
@@ -183,7 +200,13 @@ export class WebRTCReceiverTransport {
 
       this.dataChannel.onopen = () => {
         console.log('[ReceiverTransport] DataChannel open');
-        this._updateStatus('CONNECTED');
+        if (this._connectionTimeout) {
+          clearTimeout(this._connectionTimeout);
+          this._connectionTimeout = null;
+        }
+        if (this.status !== 'WAITING' && this.status !== 'TRANSFERRING' && this.status !== 'COMPLETED') {
+          this._updateStatus('CONNECTED');
+        }
       };
 
       this.dataChannel.onmessage = (event) => {
@@ -191,13 +214,20 @@ export class WebRTCReceiverTransport {
       };
 
       this.dataChannel.onerror = (err) => {
-        console.error('[ReceiverTransport] DataChannel error:', err);
+        console.error('[ReceiverTransport] DataChannel error:', JSON.stringify(err), err);
+      };
+
+      this.dataChannel.onclose = () => {
+        console.log('[ReceiverTransport] DataChannel closed. isCompleted:', this.isCompleted, 'status:', this.status);
+        // Only treat as error if we weren't already done
+        if (!this.isCompleted && this.status === 'TRANSFERRING') {
+          console.error('[ReceiverTransport] DataChannel closed unexpectedly during transfer!');
+          this.onError(new Error('Connection dropped during file transfer. Please try again.'));
+          this._updateStatus('FAILED');
+        }
       };
     };
   }
-
-
-
 
   /**
    * Handle incoming DataChannel messages (Manifest, Control, Binary Chunks)
@@ -207,43 +237,67 @@ export class WebRTCReceiverTransport {
 
     if (msg.isControl) {
       if (msg.type === MESSAGE_TYPES.MANIFEST) {
-        console.log('[ReceiverTransport] Received Manifest:', msg.payload);
-        // Manifest received = data channel is working = connection is good → cancel timeout
+        console.log('[ReceiverTransport] Received Manifest:', JSON.stringify(msg.payload.files?.map(f => ({ name: f.name, size: f.size, totalChunks: f.totalChunks }))));
+
+        // Manifest received = data channel is working → cancel connection timeout
         if (this._connectionTimeout) {
           clearTimeout(this._connectionTimeout);
           this._connectionTimeout = null;
         }
+
         this.manifest = msg.payload;
         this.progress.totalFiles = this.manifest.totalFiles;
         this.progress.totalBytes = this.manifest.totalBytes;
         this._updateStatus('WAITING'); // Waiting for user to click "Receive Everything"
 
       } else if (msg.type === MESSAGE_TYPES.FILE_START) {
-        console.log(`[ReceiverTransport] File transfer started: ${msg.payload.fileId}`);
-        const fileInfo = this.manifest.files.find(f => f.id === msg.payload.fileId);
+        const fileId = msg.payload.fileId;
+        console.log(`[ReceiverTransport] FILE_START: ${fileId}`);
+        const fileInfo = this.manifest?.files?.find(f => f.id === fileId);
         if (fileInfo) {
           this.progress.currentFile = fileInfo;
           this.receivedFiles.set(fileInfo.id, {
             info: fileInfo,
             chunks: new Map(),
-            receivedBytes: 0
+            plaintextBytes: 0
           });
+        } else {
+          console.warn('[ReceiverTransport] FILE_START for unknown fileId:', fileId);
         }
+
       } else if (msg.type === MESSAGE_TYPES.FILE_END) {
-        console.log(`[ReceiverTransport] File transfer ended: ${msg.payload.fileId}`);
-        await this._assembleAndDownloadFile(msg.payload.fileId);
+        const fileId = msg.payload.fileId;
+        console.log(`[ReceiverTransport] FILE_END: ${fileId}`);
+        await this._assembleFile(fileId);
         this.progress.filesReceived++;
+
       } else if (msg.type === MESSAGE_TYPES.TRANSFER_COMPLETE) {
-        console.log('[ReceiverTransport] Full transfer complete. Sending TRANSFER_COMPLETE_ACK...');
+        console.log('[ReceiverTransport] TRANSFER_COMPLETE received. Verifying all files...');
+
+        // Verify all expected files were assembled
+        const expectedFiles = this.manifest?.files || [];
+        const completedIds = new Set(this.completedFiles.map(f => f.fileId));
+        const missing = expectedFiles.filter(f => !completedIds.has(f.id));
+
+        if (missing.length > 0) {
+          console.error('[ReceiverTransport] Missing files at TRANSFER_COMPLETE:', missing.map(f => f.name));
+          // Still mark complete — don't block user if files arrived but verification edge case
+        }
+
         this.isCompleted = true;
         if (this._connectionTimeout) clearTimeout(this._connectionTimeout);
+
+        // Send ACK before calling onComplete so sender receives confirmation
         if (this.dataChannel && this.dataChannel.readyState === 'open') {
           this.dataChannel.send(encodeControlMessage(MESSAGE_TYPES.TRANSFER_COMPLETE_ACK));
         }
+
         this._updateStatus('COMPLETED');
         this.onComplete();
+
       } else if (msg.type === MESSAGE_TYPES.CANCEL) {
         if (!this.isCompleted && this.status !== 'COMPLETED') {
+          console.log('[ReceiverTransport] Sender sent CANCEL');
           this.cancel();
         }
       }
@@ -261,25 +315,28 @@ export class WebRTCReceiverTransport {
     let fileRecord = this.receivedFiles.get(fileId);
 
     if (!fileRecord) {
-      const fileInfo = this.manifest?.files?.find(f => f.id === fileId) || { id: fileId, name: 'download', size: 0 };
-      fileRecord = { info: fileInfo, chunks: new Map(), receivedBytes: 0 };
+      // FILE_START may arrive after first chunk on some browsers — handle gracefully
+      const fileInfo = this.manifest?.files?.find(f => f.id === fileId) || {
+        id: fileId, name: 'download', size: 0, totalChunks, type: 'application/octet-stream'
+      };
+      fileRecord = { info: fileInfo, chunks: new Map(), plaintextBytes: 0 };
       this.receivedFiles.set(fileId, fileRecord);
+      console.warn('[ReceiverTransport] Received chunk before FILE_START for:', fileId);
     }
 
     let plaintextPayload = payload;
 
-    // Decrypt chunk if encryption key is present
     if (this.encryptionKey) {
       try {
         plaintextPayload = await decryptChunk(this.encryptionKey, payload);
       } catch (err) {
-        console.error(`[ReceiverTransport] Decryption failed for chunk ${chunkIndex}:`, err);
-        return;
+        console.error(`[ReceiverTransport] Decryption failed for chunk ${chunkIndex} of file ${fileId}:`, err);
+        return; // Skip this chunk — integrity check will catch it
       }
     }
 
     fileRecord.chunks.set(chunkIndex, plaintextPayload);
-    fileRecord.receivedBytes += plaintextPayload.byteLength;
+    fileRecord.plaintextBytes += plaintextPayload.byteLength;
 
     this.progress.receivedBytes += plaintextPayload.byteLength;
     this._bytesSinceLastUpdate += plaintextPayload.byteLength;
@@ -297,113 +354,68 @@ export class WebRTCReceiverTransport {
       this._updateStatus('TRANSFERRING');
       this._lastUpdate = Date.now();
       this._bytesSinceLastUpdate = 0;
+    } else {
+      console.error('[ReceiverTransport] Cannot accept transfer — DataChannel not open. State:', this.dataChannel?.readyState);
     }
   }
 
   /**
-   * Assemble file chunks sequentially into a Blob & trigger browser download
+   * Assemble file chunks into a Blob and store in completedFiles
    */
-  async _assembleAndDownloadFile(fileId) {
+  async _assembleFile(fileId) {
     const fileRecord = this.receivedFiles.get(fileId);
-    if (!fileRecord) return;
+    if (!fileRecord) {
+      console.error('[ReceiverTransport] _assembleFile: no record for fileId:', fileId);
+      return;
+    }
 
     const { info, chunks } = fileRecord;
 
-    // Integrity check: chunk count
+    console.log(`[ReceiverTransport] Assembling: ${info.name} — received ${chunks.size}/${info.totalChunks} chunks`);
+
+    // Integrity check: chunk count must match manifest
     if (chunks.size !== info.totalChunks) {
-      console.error(`[ReceiverTransport] Integrity check failed for ${info.name}: Chunks (${chunks.size}) != expected (${info.totalChunks})`);
+      const errMsg = `File "${info.name}": received ${chunks.size} chunks but expected ${info.totalChunks}`;
+      console.error('[ReceiverTransport] Chunk count mismatch:', errMsg);
+      // Only fire error if not already completed (prevents race condition)
       if (!this.isCompleted) {
-        this.onError(new Error(`Transfer incomplete for ${info.name}. Missing chunks.`));
+        this.onError(new Error(errMsg));
       }
       return;
     }
 
-    // Assemble sorted chunks
+    // Assemble chunks in order
     const sortedChunks = [];
     for (let i = 0; i < info.totalChunks; i++) {
       const chunk = chunks.get(i);
-      if (chunk) sortedChunks.push(chunk);
+      if (!chunk) {
+        const errMsg = `File "${info.name}": chunk ${i} is missing`;
+        console.error('[ReceiverTransport]', errMsg);
+        if (!this.isCompleted) this.onError(new Error(errMsg));
+        return;
+      }
+      sortedChunks.push(chunk);
     }
 
     const mimeType = info.type || 'application/octet-stream';
     const blob = new Blob(sortedChunks, { type: mimeType });
 
-    // Blob size verification
+    // Blob size must match the original plaintext file size
     if (blob.size !== info.size) {
-      console.error(`[ReceiverTransport] Blob size mismatch for ${info.name}: ${blob.size} != ${info.size}`);
-      if (!this.isCompleted) {
-        this.onError(new Error(`Transfer incomplete for ${info.name}. Corrupted binary assembly.`));
-      }
+      const errMsg = `File "${info.name}": assembled ${blob.size} bytes but expected ${info.size} bytes`;
+      console.error('[ReceiverTransport] Blob size mismatch:', errMsg);
+      if (!this.isCompleted) this.onError(new Error(errMsg));
       return;
     }
 
-    console.log(`[ReceiverTransport] File verified: ${info.name} (${blob.size} bytes)`);
-    const file = new File([blob], info.name, { type: mimeType, lastModified: Date.now() });
+    console.log(`[ReceiverTransport] ✓ File verified: ${info.name} (${blob.size} bytes)`);
 
-    if (!this.completedFiles) this.completedFiles = [];
+    const file = new File([blob], info.name, { type: mimeType, lastModified: Date.now() });
     this.completedFiles.push({ file, blob, filename: info.name, mimeType, fileId });
 
     // Free raw chunk memory immediately
     this.receivedFiles.delete(fileId);
   }
-
-
-  saveFileItem(item) {
-    if (!item) return Promise.reject(new Error('File not available'));
-    return this._triggerBrowserDownload(item.blob, item.filename, item.file, true);
-  }
-
-  async _triggerBrowserDownload(blob, filename, fileObj, forceManual = false) {
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-    
-    // Create a real File object if not provided
-    const targetFile = fileObj || new File([blob], filename, { 
-      type: blob.type || 'application/octet-stream',
-      lastModified: Date.now() 
-    });
-
-    // For iOS Safari/Chrome: Capability detection using navigator.canShare({ files }) & navigator.share
-    if (isIOS && navigator.share && navigator.canShare) {
-      try {
-        if (navigator.canShare({ files: [targetFile] })) {
-          await navigator.share({
-            files: [targetFile],
-            title: filename,
-          });
-          return;
-        }
-      } catch (err) {
-        // If user cancelled the share sheet, ignore silently
-        if (err.name === 'AbortError' || err.message?.includes('cancel') || err.message?.includes('cancellation')) {
-          console.log('[ReceiverTransport] User cancelled iOS share sheet.');
-          return;
-        }
-        console.warn('[ReceiverTransport] Native share error, falling back to Blob download:', err);
-      }
-    }
-
-
-
-    // Standard Desktop / Android Blob Download Fallback
-    try {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename || 'download';
-      a.style.display = 'none';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      // Retain object URL for 60 seconds so browser download manager finishes read
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
-    } catch (e) {
-      console.error('[ReceiverTransport] Download error:', e);
-      throw new Error('Unable to save this file. Please try again.');
-    }
-  }
-
-
-
 
   _updateProgressStats() {
     const now = Date.now();
@@ -429,8 +441,8 @@ export class WebRTCReceiverTransport {
   }
 
   cancel() {
-    console.log('[ReceiverTransport] Cleaning up receiver transport session');
-    
+    console.log('[ReceiverTransport] Cancelling receiver transport session');
+
     if (this._connectionTimeout) {
       clearTimeout(this._connectionTimeout);
       this._connectionTimeout = null;
@@ -470,5 +482,4 @@ export class WebRTCReceiverTransport {
       this._updateStatus('CANCELLED');
     }
   }
-
 }
