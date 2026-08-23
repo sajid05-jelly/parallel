@@ -43,74 +43,72 @@ export default function SenderPage() {
         return (
           <motion.div
             key="mode-selection"
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.4 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.3 }}
             className="w-full max-w-2xl mx-auto text-center"
           >
-            <div className="mb-10">
-              <span className="text-xs tracking-[0.25em] text-[#5C6462] font-mono uppercase mb-4 inline-block">
+            <div className="mb-12">
+              <span className="text-[11px] font-medium tracking-widest text-[#9CA3AF] uppercase mb-4 inline-block">
                 Direct P2P File Transfer
               </span>
-              <h1 className="font-space text-3xl md:text-5xl font-medium text-[#F5F5F2] leading-tight tracking-tight mb-3">
-                How do you want to send?
+              <h1 className="text-4xl md:text-[44px] font-semibold text-[#F3F4F6] leading-tight tracking-tight mb-4">
+                Choose transfer mode
               </h1>
-              <p className="text-sm text-[#9CA3A2] max-w-md mx-auto">
-                Choose the best transfer mode for your current devices and network.
+              <p className="text-[15px] text-[#6B7280] max-w-md mx-auto leading-relaxed">
+                Select the fastest route based on your current network environment.
               </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5 text-left mb-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-left mb-8">
               {/* MODE 1 — NEARBY ⚡ */}
               <button
                 onClick={() => setMode('nearby')}
-                className="group p-6 rounded-2xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.08] hover:border-[#D4A574]/40 transition-all text-left flex flex-col justify-between"
+                className="group p-7 rounded-[20px] bg-[#0C0D0E] hover:bg-[#121315] border border-[#ffffff0a] hover:border-[#D4A574]/30 transition-colors text-left flex flex-col shadow-sm"
               >
-                <div>
-                  <div className="flex items-center justify-between mb-4">
-                    <span className="w-12 h-12 rounded-xl bg-[#D4A574]/10 text-[#D4A574] text-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
-                      ⚡
-                    </span>
-                    <span className="text-[10px] font-mono uppercase tracking-widest px-2.5 py-1 rounded-full bg-[#D4A574]/10 text-[#D4A574]">
-                      MAX SPEED
-                    </span>
+                <div className="flex items-center justify-between mb-5">
+                  <div className="w-10 h-10 rounded-full bg-[#D4A574]/10 flex items-center justify-center">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#D4A574" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
                   </div>
-                  <h3 className="text-xl font-medium text-[#F5F5F2] mb-1 group-hover:text-[#D4A574] transition-colors">
-                    Nearby Transfer
-                  </h3>
-                  <p className="text-xs text-[#9CA3A2] leading-relaxed mb-4">
-                    Connect both devices to the same Wi-Fi for direct local LAN transfer.
-                  </p>
+                  <span className="text-[10px] font-medium tracking-wider px-2.5 py-1 rounded-full bg-[#D4A574]/10 text-[#D4A574] uppercase">
+                    Max Speed
+                  </span>
                 </div>
-                <div className="text-[11px] text-[#5C6462] font-mono flex items-center gap-1 mt-2">
-                  <span>Same Wi-Fi</span> &middot; <span>Ultra fast</span>
+                <h3 className="text-lg font-medium text-[#F3F4F6] mb-2 group-hover:text-white transition-colors">
+                  Nearby Transfer
+                </h3>
+                <p className="text-[13.5px] text-[#9CA3AF] leading-relaxed mb-5 flex-grow">
+                  Connect both devices to the same Wi-Fi for instant local network transfer.
+                </p>
+                <div className="pt-4 border-t border-[#ffffff0a] flex items-center gap-4 text-[12px] text-[#6B7280]">
+                  <span className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-[#6B7280]"></div> Same Wi-Fi</span>
+                  <span className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-[#6B7280]"></div> P2P Direct</span>
                 </div>
               </button>
 
               {/* MODE 2 — ANYWHERE 🌐 */}
               <button
                 onClick={() => setMode('anywhere')}
-                className="group p-6 rounded-2xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.08] hover:border-[#5BA5A5]/40 transition-all text-left flex flex-col justify-between"
+                className="group p-7 rounded-[20px] bg-[#0C0D0E] hover:bg-[#121315] border border-[#ffffff0a] hover:border-[#5BA5A5]/30 transition-colors text-left flex flex-col shadow-sm"
               >
-                <div>
-                  <div className="flex items-center justify-between mb-4">
-                    <span className="w-12 h-12 rounded-xl bg-[#5BA5A5]/10 text-[#5BA5A5] text-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
-                      🌐
-                    </span>
-                    <span className="text-[10px] font-mono uppercase tracking-widest px-2.5 py-1 rounded-full bg-[#5BA5A5]/10 text-[#5BA5A5]">
-                      UNIVERSAL
-                    </span>
+                <div className="flex items-center justify-between mb-5">
+                  <div className="w-10 h-10 rounded-full bg-[#5BA5A5]/10 flex items-center justify-center">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5BA5A5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
                   </div>
-                  <h3 className="text-xl font-medium text-[#F5F5F2] mb-1 group-hover:text-[#5BA5A5] transition-colors">
-                    Anywhere Transfer
-                  </h3>
-                  <p className="text-xs text-[#9CA3A2] leading-relaxed mb-4">
-                    Send to devices on different networks, mobile data, or anywhere in the world.
-                  </p>
+                  <span className="text-[10px] font-medium tracking-wider px-2.5 py-1 rounded-full bg-[#5BA5A5]/10 text-[#5BA5A5] uppercase">
+                    Universal
+                  </span>
                 </div>
-                <div className="text-[11px] text-[#5C6462] font-mono flex items-center gap-1 mt-2">
-                  <span>Different networks</span> &middot; <span>Works anywhere</span>
+                <h3 className="text-lg font-medium text-[#F3F4F6] mb-2 group-hover:text-white transition-colors">
+                  Anywhere Transfer
+                </h3>
+                <p className="text-[13.5px] text-[#9CA3AF] leading-relaxed mb-5 flex-grow">
+                  Send securely across different networks, mobile data, or anywhere in the world.
+                </p>
+                <div className="pt-4 border-t border-[#ffffff0a] flex items-center gap-4 text-[12px] text-[#6B7280]">
+                  <span className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-[#6B7280]"></div> Any Network</span>
+                  <span className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-[#6B7280]"></div> Encrypted</span>
                 </div>
               </button>
             </div>
@@ -123,63 +121,46 @@ export default function SenderPage() {
         return (
           <motion.div 
             key="upload-portal"
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.4 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.3 }}
             className="w-full"
           >
-            <div className="text-center mb-8">
+            <div className="max-w-xl mx-auto mb-8 relative">
               <button
                 onClick={() => setMode(null)}
-                className="text-xs font-mono text-[#9CA3A2] hover:text-[#F5F5F2] mb-4 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/[0.03] border border-white/[0.06] transition-colors"
+                className="absolute -top-12 left-0 text-[13px] text-[#9CA3AF] hover:text-[#F3F4F6] flex items-center gap-2 transition-colors"
               >
-                <span>&larr;</span> Change Mode ({mode === 'nearby' ? '⚡ Nearby' : '🌐 Anywhere'})
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+                Back to Modes
               </button>
-              <h1 className="font-space text-4xl md:text-5xl lg:text-6xl font-medium text-[#F5F5F2] leading-tight tracking-tight">
-                Send anything.<br/>
-                Through a temporary <span className="text-gradient-portal font-semibold">portal.</span>
+              
+              <h1 className="text-3xl md:text-[36px] font-semibold text-[#F3F4F6] leading-tight tracking-tight mb-2">
+                Share files securely
               </h1>
-              <p className="text-sm md:text-base text-[#9CA3A2] max-w-md mx-auto mt-4 leading-relaxed">
+              <p className="text-[14.5px] text-[#9CA3AF] leading-relaxed">
                 {mode === 'nearby' 
-                  ? 'Connect both devices to the same Wi-Fi for maximum speed direct LAN transfer.'
-                  : 'Direct device-to-device file transfer across any network.'
+                  ? 'Using Local Network Transfer. Files will be sent over your current Wi-Fi.'
+                  : 'Using Anywhere Transfer. Files are end-to-end encrypted across networks.'
                 }
               </p>
             </div>
 
             <div className="max-w-xl mx-auto">
-              {mode === 'nearby' && (
-                <div className="mb-6 p-5 rounded-2xl bg-white/[0.03] border border-[#D4A574]/30 text-left">
-                  <div className="flex items-center gap-3 mb-2">
-                    <span className="w-8 h-8 rounded-lg bg-[#D4A574]/10 text-[#D4A574] text-lg flex items-center justify-center font-bold">
-                      ⚡
-                    </span>
-                    <div>
-                      <h4 className="text-sm font-semibold text-[#F5F5F2]">
-                        Nearby Direct LAN Transfer
-                      </h4>
-                      <p className="text-xs text-[#9CA3A2]">
-                        Requires both devices to be on the <strong>same Wi-Fi network</strong>.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
               <UploadPortal onFilesSelected={handleFilesSelected} disabled={status === 'UPLOADING'} />
               
-              <div className="flex items-center justify-center gap-6 text-xs text-[#5C6462] mt-6">
-                <span className="flex items-center gap-1.5">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+              <div className="flex items-center justify-center gap-8 text-[12px] text-[#6B7280] mt-6">
+                <span className="flex items-center gap-2">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
                   End-to-end encrypted
                 </span>
-                <span>◌ No account needed</span>
-                <span>⏱ 2-min expiry</span>
+                <span className="flex items-center gap-2">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                  2-minute expiry
+                </span>
               </div>
             </div>
-
-
           </motion.div>
         );
       }
@@ -246,20 +227,19 @@ export default function SenderPage() {
       return (
         <motion.div
           key="completed"
-          initial={{ opacity: 0, scale: 0.9 }}
+          initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0 }}
-          className="text-center p-8"
+          className="text-center p-8 max-w-md mx-auto bg-[#0C0D0E]/60 border border-[#ffffff10] backdrop-blur-xl rounded-[24px] shadow-sm"
         >
-          <div className="w-20 h-20 mx-auto bg-green-500/20 text-green-400 rounded-full flex items-center justify-center mb-6">
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          <div className="w-16 h-16 mx-auto bg-green-500/10 text-green-400 rounded-full flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(34,197,94,0.15)]">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
           </div>
-          <h2 className="text-3xl font-medium text-[#F5F5F2] mb-4">Delivered.</h2>
-          <p className="text-[#9CA3A2] mb-8">Your files have been securely transferred.</p>
-          <button onClick={reset} className="px-8 py-3 bg-gradient-to-r from-[#D4A574] via-[#9CA3A2] to-[#5BA5A5] hover:opacity-95 text-[#090A0A] font-semibold rounded-xl transition-all active:scale-95 text-sm uppercase tracking-wide">
-            Send Another
+          <h2 className="text-2xl font-semibold text-[#F3F4F6] mb-2 tracking-tight">Transfer complete</h2>
+          <p className="text-[14px] text-[#9CA3AF] mb-8 leading-relaxed">Your files have been securely transferred and saved on the receiver device.</p>
+          <button onClick={reset} className="w-full py-3 bg-white text-black font-medium rounded-xl hover:bg-gray-100 transition-colors shadow-sm">
+            Send More Files
           </button>
-
         </motion.div>
       );
     }
