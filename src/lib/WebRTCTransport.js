@@ -286,6 +286,7 @@ export class WebRTCTransport {
 
       this._updateStatus('CONNECTED');
       this._sendManifest();
+      this._startHeartbeat();
     };
 
     this.dataChannel.onmessage = (event) => {
@@ -298,6 +299,7 @@ export class WebRTCTransport {
 
     this.dataChannel.onclose = () => {
       console.log('[WebRTCTransport] DataChannel closed. isCompleted:', this.isCompleted, 'status:', this.status);
+      this._stopHeartbeat();
       if (this.isTransferCancelled) {
         console.log('[WebRTCTransport] Ignoring DataChannel close because transfer was intentionally cancelled.');
         return;
@@ -309,6 +311,24 @@ export class WebRTCTransport {
         this._updateStatus('FAILED');
       }
     };
+  }
+
+  _startHeartbeat() {
+    this._stopHeartbeat();
+    this._heartbeatInterval = setInterval(() => {
+      if (this.dataChannel?.readyState === 'open') {
+        try {
+          this.dataChannel.send(encodeControlMessage(MESSAGE_TYPES.PING));
+        } catch(e) {}
+      }
+    }, 5000);
+  }
+
+  _stopHeartbeat() {
+    if (this._heartbeatInterval) {
+      clearInterval(this._heartbeatInterval);
+      this._heartbeatInterval = null;
+    }
   }
 
   /**
@@ -361,6 +381,13 @@ export class WebRTCTransport {
         console.log('[WebRTCTransport] Receiver requested transfer cancellation');
         this.cancelPortal();
       }
+    } else if (msg.type === MESSAGE_TYPES.PING) {
+      if (this.dataChannel?.readyState === 'open') {
+        this.dataChannel.send(encodeControlMessage(MESSAGE_TYPES.PONG));
+      }
+    } else if (msg.type === MESSAGE_TYPES.PONG) {
+      // heartbeat acknowledged
+      this._lastPong = Date.now();
     }
   }
 
@@ -575,6 +602,7 @@ export class WebRTCTransport {
   async cancelPortal() {
     console.log('[WebRTCTransport] Cancelling portal transfer session');
     this.isTransferCancelled = true;
+    this._stopHeartbeat();
 
     if (this._connectionTimeout) {
       clearTimeout(this._connectionTimeout);

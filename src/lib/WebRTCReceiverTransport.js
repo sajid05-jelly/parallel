@@ -207,6 +207,8 @@ export class WebRTCReceiverTransport {
         if (this.status !== 'WAITING' && this.status !== 'TRANSFERRING' && this.status !== 'COMPLETED') {
           this._updateStatus('CONNECTED');
         }
+        
+        this._startHeartbeat();
       };
 
       this.dataChannel.onmessage = (event) => {
@@ -219,6 +221,7 @@ export class WebRTCReceiverTransport {
 
       this.dataChannel.onclose = () => {
         console.log('[ReceiverTransport] DataChannel closed. isCompleted:', this.isCompleted, 'status:', this.status);
+        this._stopHeartbeat();
         // Only treat as error if we weren't already done
         if (!this.isCompleted && this.status === 'TRANSFERRING') {
           console.error('[ReceiverTransport] DataChannel closed unexpectedly during transfer!');
@@ -227,6 +230,24 @@ export class WebRTCReceiverTransport {
         }
       };
     };
+  }
+
+  _startHeartbeat() {
+    this._stopHeartbeat();
+    this._heartbeatInterval = setInterval(() => {
+      if (this.dataChannel?.readyState === 'open') {
+        try {
+          this.dataChannel.send(encodeControlMessage(MESSAGE_TYPES.PING));
+        } catch(e) {}
+      }
+    }, 5000);
+  }
+
+  _stopHeartbeat() {
+    if (this._heartbeatInterval) {
+      clearInterval(this._heartbeatInterval);
+      this._heartbeatInterval = null;
+    }
   }
 
   /**
@@ -301,6 +322,12 @@ export class WebRTCReceiverTransport {
           console.log('[ReceiverTransport] Sender sent CANCEL');
           this.cancel();
         }
+      } else if (msg.type === MESSAGE_TYPES.PING) {
+        if (this.dataChannel?.readyState === 'open') {
+          this.dataChannel.send(encodeControlMessage(MESSAGE_TYPES.PONG));
+        }
+      } else if (msg.type === MESSAGE_TYPES.PONG) {
+        this._lastPong = Date.now();
       }
 
     } else if (msg.isBinaryChunk) {
@@ -342,8 +369,11 @@ export class WebRTCReceiverTransport {
           return; // Skip this chunk — integrity check will catch it
         }
       }
+      
+      // Wrap in a Blob immediately so the browser can spool it to disk instead of exhausting heap RAM
+      const blobChunk = new Blob([plaintextPayload]);
 
-      fileRecord.chunks.set(chunkIndex, plaintextPayload);
+      fileRecord.chunks.set(chunkIndex, blobChunk);
       fileRecord.plaintextBytes += plaintextPayload.byteLength;
 
       this.progress.receivedBytes += plaintextPayload.byteLength;
@@ -458,7 +488,8 @@ export class WebRTCReceiverTransport {
 
   cancel() {
     console.log('[ReceiverTransport] Cancelling receiver transport session');
-
+    this._stopHeartbeat();
+    
     if (this._connectionTimeout) {
       clearTimeout(this._connectionTimeout);
       this._connectionTimeout = null;
