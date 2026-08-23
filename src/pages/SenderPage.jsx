@@ -9,7 +9,7 @@ import FileList from '../components/FileList';
 import QRScreen from '../components/QRScreen';
 import TransferProgress from '../components/TransferProgress';
 import ErrorState from '../components/ErrorState';
-import PortalAnimation from '../components/PortalAnimation';
+
 
 export default function SenderPage() {
   const {

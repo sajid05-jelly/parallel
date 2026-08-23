@@ -4,7 +4,7 @@ import useReceiver from '../hooks/useReceiver';
 import ParallelBackground from '../components/ParallelBackground';
 import GlassCard from '../components/GlassCard';
 import TransferProgress from '../components/TransferProgress';
-import PortalAnimation from '../components/PortalAnimation';
+
 import ErrorState from '../components/ErrorState';
 import { formatFileSize, getFileIcon, getFileTypeCategory } from '../config/constants';
 
@@ -152,10 +152,52 @@ export default function ReceiverPage({ token, keyString }) {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 1.05 }}
               transition={{ duration: 0.4 }}
-              className="w-full max-w-sm mx-auto flex flex-col items-center text-center"
+              className="w-full max-w-md mx-auto"
             >
-              <PortalAnimation stage="opening" />
-              <h2 className="mt-8 text-xl font-light text-[#F5F5F2]">Connecting portal…</h2>
+              <style>{`
+                @keyframes connectFlow {
+                  0% { transform: translateX(-100%); opacity: 0; }
+                  20% { opacity: 1; }
+                  80% { opacity: 1; }
+                  100% { transform: translateX(100%); opacity: 0; }
+                }
+              `}</style>
+              <GlassCard className="flex flex-col p-8 rounded-[24px]">
+                <div className="flex flex-col items-center justify-center text-center">
+                  <h2 className="text-[15px] font-medium text-[#F3F4F6] tracking-wide mb-2">Connecting portal...</h2>
+                  <p className="text-[13px] text-[#9CA3AF] mb-10">Establishing secure peer connection</p>
+                  
+                  <div className="w-full relative flex items-center justify-between px-2 mb-2">
+                    {/* Source Node (Laptop) */}
+                    <div className="w-10 h-10 rounded-full border border-white/[0.08] bg-white/[0.02] flex items-center justify-center z-10 shadow-[0_4px_15px_rgba(0,0,0,0.2)]">
+                      <svg className="w-4 h-4 text-[#9CA3AF]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                        <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                        <line x1="8" y1="21" x2="16" y2="21"></line>
+                        <line x1="12" y1="17" x2="12" y2="21"></line>
+                      </svg>
+                    </div>
+
+                    {/* Path & Pulsing Packets */}
+                    <div className="flex-1 h-[1px] bg-gradient-to-r from-transparent via-[#5BA5A5]/40 to-transparent relative mx-4 overflow-visible">
+                      <div className="absolute top-0 left-0 w-full h-full animate-[pulse_1.5s_ease-in-out_infinite] bg-[#5BA5A5]/20 shadow-[0_0_8px_rgba(91,165,165,0.4)]"></div>
+                      <div className="absolute top-[-1.5px] left-0 w-full h-full" style={{ animation: 'connectFlow 2s linear infinite' }}>
+                        <div className="absolute right-0 w-1.5 h-1.5 rounded-full bg-[#5BA5A5] shadow-[0_0_8px_rgba(91,165,165,0.8)]"></div>
+                      </div>
+                      <div className="absolute top-[-1.5px] left-0 w-full h-full" style={{ animation: 'connectFlow 2s linear infinite', animationDelay: '1s' }}>
+                        <div className="absolute right-0 w-1.5 h-1.5 rounded-full bg-[#5BA5A5] shadow-[0_0_8px_rgba(91,165,165,0.8)]"></div>
+                      </div>
+                    </div>
+
+                    {/* Dest Node (Phone) */}
+                    <div className="w-10 h-10 rounded-full border border-white/[0.08] bg-white/[0.02] flex items-center justify-center z-10 shadow-[0_4px_15px_rgba(0,0,0,0.2)]">
+                      <svg className="w-4 h-4 text-[#9CA3AF]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                        <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
+                        <line x1="12" y1="18" x2="12.01" y2="18"></line>
+                      </svg>
+                    </div>
+                  </div>
+                </div>
+              </GlassCard>
             </motion.div>
           )}
 
