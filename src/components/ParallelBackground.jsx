@@ -1,8 +1,33 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 
 const ParallelBackground = () => {
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    // Only apply on devices with a fine pointer (desktop/mouse)
+    const isDesktop = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+    if (!isDesktop) return;
+
+    let rafId;
+    const handleMouseMove = (e) => {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        if (containerRef.current) {
+          containerRef.current.style.setProperty('--mouse-x', `${e.clientX}px`);
+          containerRef.current.style.setProperty('--mouse-y', `${e.clientY}px`);
+        }
+      });
+    };
+
+    window.addEventListener('mousemove', handleMouseMove, { passive: true });
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      if (rafId) cancelAnimationFrame(rafId);
+    };
+  }, []);
+
   return (
-    <div className="fixed inset-0 pointer-events-none -z-10 bg-[#030407] overflow-hidden">
+    <div ref={containerRef} className="fixed inset-0 pointer-events-none -z-10 bg-[#030407] overflow-hidden">
       
       {/* Subtle noise texture for a premium cinematic feel */}
       <div 
@@ -30,7 +55,7 @@ const ParallelBackground = () => {
         <rect x="0" y="0" width="100%" height="100%" fill="url(#star-pattern)"></rect>
       </svg>
 
-      {/* Dimensional Rings / Intersecting Parallel Planes */}
+      {/* BASE LAYER: Dimensional Rings / Intersecting Parallel Planes */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full min-w-[1200px] min-h-[1200px] flex justify-center items-center opacity-60">
         <svg viewBox="0 0 1000 1000" className="w-[140%] h-[140%] animate-[spin_180s_linear_infinite]" style={{ transformOrigin: 'center' }}>
           <defs>
@@ -57,6 +82,42 @@ const ParallelBackground = () => {
           {/* Very faint huge outer orbit linking them */}
           <circle cx="500" cy="500" r="480" stroke="#ffffff" strokeOpacity="0.03" strokeWidth="1" fill="none" />
         </svg>
+      </div>
+
+      {/* GLOWING INTERACTIVE LAYER (Desktop Only) */}
+      <div 
+        className="hidden md:block absolute inset-0 pointer-events-none"
+        style={{
+          maskImage: 'radial-gradient(circle 350px at var(--mouse-x, -1000px) var(--mouse-y, -1000px), black 0%, transparent 100%)',
+          WebkitMaskImage: 'radial-gradient(circle 350px at var(--mouse-x, -1000px) var(--mouse-y, -1000px), black 0%, transparent 100%)'
+        }}
+      >
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full min-w-[1200px] min-h-[1200px] flex justify-center items-center opacity-100 transition-opacity duration-300">
+          <svg viewBox="0 0 1000 1000" className="w-[140%] h-[140%] animate-[spin_180s_linear_infinite]" style={{ transformOrigin: 'center' }}>
+            <defs>
+              <linearGradient id="ring1-glow" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#5BA5A5" stopOpacity="0" />
+                <stop offset="30%" stopColor="#5BA5A5" stopOpacity="1" />
+                <stop offset="70%" stopColor="#5BA5A5" stopOpacity="0.4" />
+                <stop offset="100%" stopColor="#D4A574" stopOpacity="0" />
+              </linearGradient>
+              <linearGradient id="ring2-glow" x1="100%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stopColor="#9C6BCA" stopOpacity="0" />
+                <stop offset="40%" stopColor="#D4A574" stopOpacity="1" />
+                <stop offset="60%" stopColor="#D4A574" stopOpacity="0.4" />
+                <stop offset="100%" stopColor="#5BA5A5" stopOpacity="0" />
+              </linearGradient>
+            </defs>
+            
+            {/* Glowing Ellipse 1 (Cyan/Green) */}
+            <ellipse cx="500" cy="500" rx="420" ry="140" stroke="url(#ring1-glow)" strokeWidth="2" fill="none" transform="rotate(35 500 500)" />
+            <ellipse cx="500" cy="500" rx="420" ry="140" stroke="url(#ring1-glow)" strokeWidth="8" filter="blur(6px)" opacity="0.6" fill="none" transform="rotate(35 500 500)" />
+            
+            {/* Glowing Ellipse 2 (Amber/Orange) */}
+            <ellipse cx="500" cy="500" rx="460" ry="160" stroke="url(#ring2-glow)" strokeWidth="2" fill="none" transform="rotate(-45 500 500)" />
+            <ellipse cx="500" cy="500" rx="460" ry="160" stroke="url(#ring2-glow)" strokeWidth="8" filter="blur(6px)" opacity="0.6" fill="none" transform="rotate(-45 500 500)" />
+          </svg>
+        </div>
       </div>
 
     </div>
