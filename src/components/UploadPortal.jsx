@@ -56,20 +56,23 @@ const UploadPortal = ({ onFilesSelected, disabled = false }) => {
         className="w-full"
       >
         <div 
-          className={`min-h-[260px] md:min-h-[300px] flex flex-col items-center justify-center text-center transition-all duration-300 rounded-[24px] border-2 border-dashed ${
+          className={`relative overflow-hidden min-h-[260px] md:min-h-[300px] flex flex-col items-center justify-center text-center transition-all duration-300 rounded-[24px] border-2 border-dashed ${
             isDragging 
-              ? 'border-[#D4A574]/40 bg-[#D4A574]/[0.02]' 
-              : 'border-[#ffffff10] bg-[#0C0D0E]/60 hover:border-[#ffffff20] hover:bg-[#121315]/80'
+              ? 'border-[#D4A574]/50 bg-[#D4A574]/[0.05] shadow-[0_0_30px_rgba(212,165,116,0.1)_inset]' 
+              : 'border-white/[0.1] bg-white/[0.02] hover:border-white/[0.15] hover:bg-white/[0.03] backdrop-blur-md shadow-[inset_0_0_20px_rgba(255,255,255,0.01)]'
           }`}
         >
-          <div className="mb-5 flex items-center justify-center w-16 h-16 rounded-full bg-white/[0.02] border border-white/[0.05]">
+          {/* Subtle sweeping light effect */}
+          <div className="absolute inset-0 bg-gradient-to-br from-white/[0.04] to-transparent pointer-events-none rounded-[24px]"></div>
+          
+          <div className="relative z-10 mb-5 flex items-center justify-center w-16 h-16 rounded-full bg-white/[0.03] border border-white/[0.08] shadow-[0_4px_20px_rgba(0,0,0,0.2)_inset_0_1px_0_rgba(255,255,255,0.05)]">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M12 16V8M12 8L8.5 11.5M12 8L15.5 11.5" stroke="#9CA3AF" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
               <path d="M4 16.5C4 18.433 5.567 20 7.5 20H16.5C18.433 20 20 18.433 20 16.5" stroke="#9CA3AF" strokeWidth="1.5" strokeLinecap="round"/>
             </svg>
           </div>
           
-          <h3 className="text-[17px] font-medium text-[#F3F4F6] mb-1.5 tracking-tight">
+          <h3 className="relative z-10 text-[17px] font-medium text-[#F3F4F6] mb-1.5 tracking-tight">
             {isDragging ? 'Drop files here' : 'Upload your files'}
           </h3>
           

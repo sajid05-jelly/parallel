@@ -9,18 +9,18 @@ const GlassCard = ({
   glow = false,
   glowColor = 'neutral'
 }) => {
-  // Use a solid dark color with a very subtle border and shadow for a premium SaaS look.
-  const baseStyle = "bg-[#0C0D0E]/80 backdrop-blur-md border border-[#ffffff0a] rounded-[24px] shadow-sm";
+  // Premium crystal/glass look with top inner border reflection
+  const baseStyle = "bg-gradient-to-b from-white/[0.04] to-white/[0.01] backdrop-blur-xl border border-white/[0.08] rounded-[24px] shadow-[0_8px_32px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.08)] relative overflow-hidden";
   
   let glowClass = "";
   if (glow) {
-    if (glowColor === 'warm') glowClass = "shadow-[0_0_40px_rgba(212,165,116,0.05)] border-[#D4A574]/20";
-    else if (glowColor === 'cool') glowClass = "shadow-[0_0_40px_rgba(91,165,165,0.05)] border-[#5BA5A5]/20";
-    else glowClass = "shadow-[0_0_40px_rgba(255,255,255,0.03)] border-white/10";
+    if (glowColor === 'warm') glowClass = "shadow-[0_0_40px_rgba(212,165,116,0.08),inset_0_1px_0_rgba(255,255,255,0.08)] border-[#D4A574]/30";
+    else if (glowColor === 'cool') glowClass = "shadow-[0_0_40px_rgba(91,165,165,0.08),inset_0_1px_0_rgba(255,255,255,0.08)] border-[#5BA5A5]/30";
+    else glowClass = "shadow-[0_0_40px_rgba(156,107,202,0.08),inset_0_1px_0_rgba(255,255,255,0.08)] border-[#9C6BCA]/30";
   }
 
   const hoverStyle = hover 
-    ? "hover:bg-[#121315]/90 hover:border-[#ffffff15] transition-all duration-300 cursor-pointer" 
+    ? "hover:from-white/[0.06] hover:to-white/[0.02] hover:border-white/[0.15] transition-all duration-300 cursor-pointer" 
     : "";
 
   const classes = `${baseStyle} ${glowClass} ${hoverStyle} ${padding} ${className}`;
@@ -31,6 +31,8 @@ const GlassCard = ({
         whileHover={{ y: -2 }}
         className={classes}
       >
+        {/* Subtle inner light sweep for crystal effect on hover */}
+        <div className="absolute inset-0 bg-gradient-to-b from-white/[0.05] to-transparent opacity-0 hover:opacity-100 transition-opacity duration-500 pointer-events-none"></div>
         {children}
       </motion.div>
     );
