@@ -93,6 +93,10 @@ export default function useReceiver() {
     }
   }, []);
 
+  const getCompletedFileBlob = useCallback((index) => {
+    return transportRef.current?.completedFiles?.[index] || null;
+  }, []);
+
   const saveAllItems = useCallback(async () => {
     if (transportRef.current) {
       return await transportRef.current.saveAllItems();
@@ -109,7 +113,8 @@ export default function useReceiver() {
     acceptTransfer,
     cancel,
     saveFileItem,
-    saveAllItems
+    saveAllItems,
+    getCompletedFileBlob
   };
 }
 
