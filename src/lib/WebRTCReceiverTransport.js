@@ -259,7 +259,8 @@ export class WebRTCReceiverTransport {
           this.receivedFiles.set(fileInfo.id, {
             info: fileInfo,
             chunks: new Map(),
-            plaintextBytes: 0
+            plaintextBytes: 0,
+            pendingDecryptions: 0
           });
         } else {
           console.warn('[ReceiverTransport] FILE_START for unknown fileId:', fileId);
@@ -319,29 +320,39 @@ export class WebRTCReceiverTransport {
       const fileInfo = this.manifest?.files?.find(f => f.id === fileId) || {
         id: fileId, name: 'download', size: 0, totalChunks, type: 'application/octet-stream'
       };
-      fileRecord = { info: fileInfo, chunks: new Map(), plaintextBytes: 0 };
+      fileRecord = { info: fileInfo, chunks: new Map(), plaintextBytes: 0, pendingDecryptions: 0 };
       this.receivedFiles.set(fileId, fileRecord);
       console.warn('[ReceiverTransport] Received chunk before FILE_START for:', fileId);
     }
 
-    let plaintextPayload = payload;
-
-    if (this.encryptionKey) {
-      try {
-        plaintextPayload = await decryptChunk(this.encryptionKey, payload);
-      } catch (err) {
-        console.error(`[ReceiverTransport] Decryption failed for chunk ${chunkIndex} of file ${fileId}:`, err);
-        return; // Skip this chunk — integrity check will catch it
-      }
+    // Initialize if not present
+    if (fileRecord.pendingDecryptions === undefined) {
+      fileRecord.pendingDecryptions = 0;
     }
+    fileRecord.pendingDecryptions++;
 
-    fileRecord.chunks.set(chunkIndex, plaintextPayload);
-    fileRecord.plaintextBytes += plaintextPayload.byteLength;
+    try {
+      let plaintextPayload = payload;
 
-    this.progress.receivedBytes += plaintextPayload.byteLength;
-    this._bytesSinceLastUpdate += plaintextPayload.byteLength;
+      if (this.encryptionKey) {
+        try {
+          plaintextPayload = await decryptChunk(this.encryptionKey, payload);
+        } catch (err) {
+          console.error(`[ReceiverTransport] Decryption failed for chunk ${chunkIndex} of file ${fileId}:`, err);
+          return; // Skip this chunk — integrity check will catch it
+        }
+      }
 
-    this._updateProgressStats();
+      fileRecord.chunks.set(chunkIndex, plaintextPayload);
+      fileRecord.plaintextBytes += plaintextPayload.byteLength;
+
+      this.progress.receivedBytes += plaintextPayload.byteLength;
+      this._bytesSinceLastUpdate += plaintextPayload.byteLength;
+
+      this._updateProgressStats();
+    } finally {
+      fileRecord.pendingDecryptions--;
+    }
   }
 
   /**
@@ -367,6 +378,11 @@ export class WebRTCReceiverTransport {
     if (!fileRecord) {
       console.error('[ReceiverTransport] _assembleFile: no record for fileId:', fileId);
       return;
+    }
+
+    // Wait for any pending async decryptions to finish before counting chunks
+    while (fileRecord.pendingDecryptions > 0) {
+      await new Promise(resolve => setTimeout(resolve, 10));
     }
 
     const { info, chunks } = fileRecord;

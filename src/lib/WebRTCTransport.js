@@ -265,11 +265,12 @@ export class WebRTCTransport {
 
       // FIX: Negotiate chunk size ONCE here, then use it consistently for both manifest & sending
       const maxMsgSize = this.dataChannel.maxMessageSize;
+      const MAX_CHUNK_SIZE = 262144; // 256KB for much higher throughput
       if (maxMsgSize && maxMsgSize > 0) {
-        // Stay well below browser SCTP limit: subtract 256 bytes for our binary header overhead
-        this._negotiatedChunkSize = Math.min(WEBRTC_CHUNK_SIZE, Math.max(16384, maxMsgSize - 512));
+        // Stay well below browser SCTP limit: subtract 512 bytes for our binary header overhead
+        this._negotiatedChunkSize = Math.min(MAX_CHUNK_SIZE, Math.max(16384, maxMsgSize - 512));
       } else {
-        this._negotiatedChunkSize = WEBRTC_CHUNK_SIZE;
+        this._negotiatedChunkSize = 65536; // 64KB fallback
       }
       console.log(`[WebRTCTransport] Negotiated chunk size: ${this._negotiatedChunkSize} bytes`);
 
@@ -415,7 +416,7 @@ export class WebRTCTransport {
         return resolve();
       }
       const check = () => {
-        if (!this.dataChannel || this.dataChannel.bufferedAmount === 0) {
+        if (!this.dataChannel || this.dataChannel.bufferedAmount === 0 || this.isTransferCancelled) {
           resolve();
         } else {
           setTimeout(check, 20);
@@ -436,12 +437,15 @@ export class WebRTCTransport {
     // Use the SAME totalChunks as in the manifest (already set correctly)
     const totalChunks = fileInfo.totalChunks;
 
+    const DYNAMIC_HIGH_WATER_MARK = 8 * 1024 * 1024; // 8MB to keep pipe full
+    const DYNAMIC_LOW_WATER_MARK = 2 * 1024 * 1024;  // 2MB to resume early
+
     for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
       if (this.isTransferCancelled) break;
 
-      // Backpressure: pause if buffer exceeds HIGH_WATER_MARK
-      if (this.dataChannel.bufferedAmount > HIGH_WATER_MARK) {
-        await this._waitForBufferDrain();
+      // Backpressure: pause if buffer exceeds DYNAMIC_HIGH_WATER_MARK
+      if (this.dataChannel.bufferedAmount > DYNAMIC_HIGH_WATER_MARK) {
+        await this._waitForBufferDrain(DYNAMIC_LOW_WATER_MARK);
       }
 
       const start = chunkIndex * chunkSize;
@@ -461,7 +465,21 @@ export class WebRTCTransport {
         payloadBuffer: encryptedChunkPayload
       });
 
-      this.dataChannel.send(packet);
+      let sent = false;
+      while (!sent) {
+        if (this.isTransferCancelled) break;
+        try {
+          this.dataChannel.send(packet);
+          sent = true;
+        } catch (e) {
+          if (e.name === 'TypeError' || e.name === 'OperationError' || (e.message && e.message.toLowerCase().includes('buffer'))) {
+            console.warn(`[WebRTCTransport] Buffer full or send error on chunk ${chunkIndex}, backing off...`);
+            await new Promise(r => setTimeout(r, 50));
+          } else {
+            throw e;
+          }
+        }
+      }
 
       const bytesSentThisChunk = end - start;
       this.progress.sentBytes += bytesSentThisChunk;
@@ -472,15 +490,15 @@ export class WebRTCTransport {
   }
 
   /**
-   * Wait for DataChannel buffer to drain below LOW_WATER_MARK
+   * Wait for DataChannel buffer to drain below lowWaterMark
    */
-  _waitForBufferDrain() {
+  _waitForBufferDrain(lowWaterMark) {
     return new Promise((resolve) => {
-      if (!this.dataChannel || this.dataChannel.bufferedAmount <= LOW_WATER_MARK) {
+      if (!this.dataChannel || this.dataChannel.bufferedAmount <= lowWaterMark) {
         return resolve();
       }
 
-      this.dataChannel.bufferedAmountLowThreshold = LOW_WATER_MARK;
+      this.dataChannel.bufferedAmountLowThreshold = lowWaterMark;
       let done = false;
 
       const cleanup = () => {
@@ -498,7 +516,7 @@ export class WebRTCTransport {
 
       // Backup polling in case browser doesn't fire 'bufferedamountlow'
       const timer = setInterval(() => {
-        if (!this.dataChannel || this.dataChannel.bufferedAmount <= LOW_WATER_MARK) {
+        if (!this.dataChannel || this.dataChannel.bufferedAmount <= lowWaterMark) {
           cleanup();
         }
       }, 50);
