@@ -19,9 +19,9 @@ const TransferProgress = ({ progress = {}, direction = 'sending', status }) => {
       <style>{`
         @keyframes streamFlow {
           0% { transform: translateX(-100%); opacity: 0; }
-          15% { opacity: 1; }
-          85% { opacity: 1; }
-          100% { transform: translateX(100%); opacity: 0; }
+          5% { opacity: 1; }
+          95% { opacity: 1; }
+          100% { transform: translateX(0%); opacity: 0; }
         }
         .data-packet {
           animation: streamFlow 1.5s linear infinite;

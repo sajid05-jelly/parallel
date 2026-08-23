@@ -157,9 +157,9 @@ export default function ReceiverPage({ token, keyString }) {
               <style>{`
                 @keyframes connectFlow {
                   0% { transform: translateX(-100%); opacity: 0; }
-                  20% { opacity: 1; }
-                  80% { opacity: 1; }
-                  100% { transform: translateX(100%); opacity: 0; }
+                  5% { opacity: 1; }
+                  95% { opacity: 1; }
+                  100% { transform: translateX(0%); opacity: 0; }
                 }
               `}</style>
               <GlassCard className="flex flex-col p-8 rounded-[24px]">
