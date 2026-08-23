@@ -240,6 +240,10 @@ export class WebRTCTransport {
         }
       } else if (state === 'failed') {
         if (this._connectionTimeout) clearTimeout(this._connectionTimeout);
+        if (this.isTransferCancelled) {
+          console.log('[WebRTCTransport] Ignoring ICE failure because transfer was intentionally cancelled.');
+          return;
+        }
         if (!this.isCompleted && this.status !== 'COMPLETED') {
           console.error('[WebRTCTransport] PeerConnection failed. ICE state:', iceState);
           if (this.mode === 'nearby') {
@@ -294,6 +298,10 @@ export class WebRTCTransport {
 
     this.dataChannel.onclose = () => {
       console.log('[WebRTCTransport] DataChannel closed. isCompleted:', this.isCompleted, 'status:', this.status);
+      if (this.isTransferCancelled) {
+        console.log('[WebRTCTransport] Ignoring DataChannel close because transfer was intentionally cancelled.');
+        return;
+      }
       // Only raise an error if the channel closed unexpectedly during a transfer
       if (!this.isCompleted && this.status === 'TRANSFERRING') {
         console.error('[WebRTCTransport] DataChannel closed during active transfer!');

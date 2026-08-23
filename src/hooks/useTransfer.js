@@ -165,6 +165,7 @@ export function useTransfer() {
   }, []);
 
   const isCreatingRef = useRef(false);
+  const isCancelledRef = useRef(false);
 
   async function _doCreatePortal(currentFiles) {
     if (isCreatingRef.current || (transportRef.current && transportRef.current.status !== 'FAILED' && transportRef.current.status !== 'CANCELLED')) {
@@ -173,20 +174,26 @@ export function useTransfer() {
     }
     
     isCreatingRef.current = true;
+    isCancelledRef.current = false;
     try {
       setStatus('CREATING');
       setError(null);
 
       const transport = new WebRTCTransport({
         onProgress: (prog) => setProgress(prog),
-        onStatusChange: (newStatus) => setStatus(newStatus),
+        onStatusChange: (newStatus) => {
+          if (isCancelledRef.current) return;
+          setStatus(newStatus);
+        },
         onError: (err) => {
+          if (isCancelledRef.current) return;
           console.error('[useTransfer] Transport error:', err);
           setError(err?.message || 'The connection between the devices was interrupted.');
           setStatus('FAILED');
         },
 
         onComplete: () => {
+          if (isCancelledRef.current) return;
           setStatus('COMPLETED');
         }
       });
@@ -198,6 +205,8 @@ export function useTransfer() {
 
       const result = await transport.createPortal();
 
+      if (isCancelledRef.current) return;
+
       if (result && result.url) {
         setTransferUrl(result.url);
         setToken(result.token);
@@ -205,6 +214,7 @@ export function useTransfer() {
         setStatus('WAITING');
       }
     } catch (err) {
+      if (isCancelledRef.current) return;
       console.error('[PARALLEL] Portal creation error:', err);
       const detail = err?.message || 'We couldn\'t create the temporary connection.';
       setError(`Couldn't open portal. ${detail}`);
@@ -215,10 +225,27 @@ export function useTransfer() {
   }
 
   const cancelTransfer = useCallback(() => {
+    isCancelledRef.current = true;
     if (transportRef.current) {
       transportRef.current.cancelPortal();
     }
-    setStatus('CANCELLED');
+    transportRef.current = null;
+    setStatus('IDLE');
+    setProgress({
+      totalBytes: 0,
+      sentBytes: 0,
+      percentage: 0,
+      currentFile: null,
+      totalFiles: 0,
+      filesSent: 0,
+      speed: 0,
+      eta: 0,
+    });
+    setTransferUrl(null);
+    setToken(null);
+    setError(null);
+    setQrExpiry(null);
+    setMode(null);
   }, []);
 
   const reset = useCallback(() => {
