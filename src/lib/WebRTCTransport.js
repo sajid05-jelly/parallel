@@ -277,20 +277,7 @@ dataChannelState: ${this.dataChannel?.readyState || 'none'}\n`);
         // Attempt ICE restart to recover the connection
         if (!this._iceRestartAttempted && this.peerConnection && this.signaling && !this.isTransferCancelled) {
           this._iceRestartAttempted = true;
-          try {
-            console.log('[WebRTCTransport] Attempting ICE restart...');
-            if (this.dataChannel && this.dataChannel.readyState === 'closed') {
-              console.log('[WebRTCTransport] Recreating DataChannel for ICE restart...');
-              this._setupDataChannel();
-            }
-            this.peerConnection.restartIce();
-            const offer = await this.peerConnection.createOffer({ iceRestart: true });
-            await this.peerConnection.setLocalDescription(offer);
-            await this.signaling.sendSignal('OFFER', offer);
-            console.log('[WebRTCTransport] ICE restart offer sent.');
-          } catch (e) {
-            console.warn('[WebRTCTransport] ICE restart failed:', e);
-          }
+          this._doIceRestart();
         }
 
       } else if (state === 'failed') {
@@ -304,20 +291,7 @@ dataChannelState: ${this.dataChannel?.readyState || 'none'}\n`);
         // Attempt ICE restart if not already tried
         if (!this._iceRestartAttempted && this.peerConnection && this.signaling && !this.isCompleted) {
           this._iceRestartAttempted = true;
-          try {
-            console.log('[WebRTCTransport] ICE failed — attempting restart...');
-            if (this.dataChannel && this.dataChannel.readyState === 'closed') {
-              console.log('[WebRTCTransport] Recreating DataChannel for ICE restart...');
-              this._setupDataChannel();
-            }
-            this.peerConnection.restartIce();
-            const offer = await this.peerConnection.createOffer({ iceRestart: true });
-            await this.peerConnection.setLocalDescription(offer);
-            await this.signaling.sendSignal('OFFER', offer);
-            console.log('[WebRTCTransport] ICE restart offer sent after failure.');
-          } catch (e) {
-            console.warn('[WebRTCTransport] ICE restart after failure failed:', e);
-          }
+          this._doIceRestart();
         }
 
         if (!this.isCompleted && this.status !== 'COMPLETED') {
@@ -409,6 +383,31 @@ progress: ${this.progress?.percentage}`);
         this._updateStatus('RECOVERING');
       }
     };
+  }
+
+  async _doIceRestart() {
+    let attempts = 0;
+    while (this.status === 'RECOVERING' && attempts < 5 && !this.isTransferCancelled) {
+      try {
+        console.log(`[WebRTCTransport] Attempting ICE restart (attempt ${attempts + 1})...`);
+        if (this.dataChannel && this.dataChannel.readyState === 'closed') {
+          console.log('[WebRTCTransport] Recreating DataChannel for ICE restart...');
+          this._setupDataChannel();
+        }
+        if (this.peerConnection.signalingState !== 'closed') {
+          this.peerConnection.restartIce();
+          const offer = await this.peerConnection.createOffer({ iceRestart: true });
+          await this.peerConnection.setLocalDescription(offer);
+          await this.signaling.sendSignal('OFFER', offer);
+          console.log('[WebRTCTransport] ICE restart offer sent.');
+          break; // Success
+        }
+      } catch (e) {
+        console.warn(`[WebRTCTransport] ICE restart attempt ${attempts + 1} failed:`, e);
+        attempts++;
+        await new Promise(r => setTimeout(r, 3000));
+      }
+    }
   }
 
   _startHeartbeat() {
@@ -539,6 +538,21 @@ progress: ${this.progress?.percentage}`);
               }
             }
             if (this.isTransferCancelled || this.status === 'FAILED') break;
+
+            // Recreate DataChannel if it closed
+            if (this.dataChannel && this.dataChannel.readyState !== 'open') {
+              console.log('[WebRTCTransport] DataChannel is not open during retry. Recreating...');
+              this._setupDataChannel();
+              
+              // Wait for it to open
+              let waitOpenMs = 0;
+              while (this.dataChannel && this.dataChannel.readyState !== 'open' && !this.isTransferCancelled && this.status !== 'FAILED') {
+                await new Promise(r => setTimeout(r, 500));
+                waitOpenMs += 500;
+                if (waitOpenMs > 30000) throw new Error('Timeout waiting for recreated DataChannel to open');
+              }
+            }
+
             console.log(`[WebRTCTransport] Connection recovered, resuming ${fileInfo.name}...`);
           }
         }

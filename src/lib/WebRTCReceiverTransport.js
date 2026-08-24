@@ -449,6 +449,14 @@ transferState: ${this.status}\n`);
 
     // Ignore duplicate chunks during a connection resume
     if (chunkIndex < fileRecord.chunkCount) {
+      // Must still ACK so sender's flow control window doesn't freeze
+      if (this.dataChannel?.readyState === 'open') {
+        this.dataChannel.send(encodeControlMessage(MESSAGE_TYPES.ACK, {
+          fileId,
+          receivedBytes: fileRecord.plaintextBytes,
+          chunkIndex: fileRecord.chunkCount - 1
+        }));
+      }
       return;
     }
 
