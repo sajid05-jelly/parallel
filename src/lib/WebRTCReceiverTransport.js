@@ -83,8 +83,13 @@ connectionState: ${this.peerConnection?.connectionState || 'none'}
 `);
 
     // 2. Validate session & claim receiver slot in database
+    let receiverCredential;
     try {
-      const { session, receiverCredential, error } = await connectReceiver(token);
+      const result = await connectReceiver(token);
+      const session = result.session;
+      receiverCredential = result.receiverCredential;
+      const error = result.error;
+
       if (error || !session) {
         throw error || new Error('Portal expired or unavailable');
       }
