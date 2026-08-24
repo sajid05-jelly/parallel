@@ -82,6 +82,10 @@ export class SupabaseSignaling {
    * Send a signaling message
    */
   async sendSignal(type, payload) {
+    if (!this._connected) {
+      throw new Error(`[Signaling] Cannot send ${type}, WebSocket is not connected`);
+    }
+
     const message = {
       type,
       senderRole: this.peerRole,
@@ -90,11 +94,14 @@ export class SupabaseSignaling {
     };
 
     if (this.isRealSupabase && this.supabaseChannel) {
-      await this.supabaseChannel.send({
+      const response = await this.supabaseChannel.send({
         type: 'broadcast',
         event: 'signal',
         payload: message
       });
+      if (response !== 'ok') {
+        throw new Error(`[Signaling] Supabase broadcast failed with status: ${response}`);
+      }
     } else {
       if (this.broadcastChannel) {
         this.broadcastChannel.postMessage(message);

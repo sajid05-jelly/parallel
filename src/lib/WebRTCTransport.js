@@ -218,11 +218,14 @@ dataChannelState: ${this.dataChannel?.readyState || 'none'}\n`);
     console.log(`[WebRTCTransport] Initializing RTCPeerConnection for mode [${this.mode}]`);
     this.peerConnection = new RTCPeerConnection({ iceServers: selectedServers });
 
+    this._outgoingIceQueue = [];
+
     // Handle ICE Candidates
-    this.peerConnection.onicecandidate = (event) => {
+    this.peerConnection.onicecandidate = async (event) => {
       if (event.candidate && this.signaling) {
-        console.log('[WebRTCTransport] Sending ICE candidate to receiver');
-        this.signaling.sendSignal('ICE_CANDIDATE', event.candidate);
+        console.log('[WebRTCTransport] Generating ICE candidate...');
+        this._outgoingIceQueue.push(event.candidate);
+        this._flushOutgoingIceQueue();
       }
     };
 
@@ -303,7 +306,14 @@ dataChannelState: ${this.dataChannel?.readyState || 'none'}\n`);
         }
         
         // Attempt ICE restart if not already tried
-        if (!this._iceRestartAttempted && this.peerConnection && this.signaling && !this.isCompleted) {
+        if (this.peerConnection && this.signaling && !this.isCompleted && this.status === 'RECOVERING') {
+          console.warn('[WebRTCTransport] ICE failed during RECOVERING! Forcing another ICE restart in 3 seconds...');
+          setTimeout(() => {
+            if (this.status === 'RECOVERING' && !this.isTransferCancelled) {
+              this._doIceRestart();
+            }
+          }, 3000);
+        } else if (!this._iceRestartAttempted && this.peerConnection && this.signaling && !this.isCompleted) {
           this._iceRestartAttempted = true;
           this._doIceRestart();
         }
@@ -397,6 +407,28 @@ progress: ${this.progress?.percentage}`);
         console.trace('[DIAG_TRACE_SENDER] _updateStatus(RECOVERING)'); this._updateStatus('RECOVERING');
       }
     };
+  }
+
+  async _flushOutgoingIceQueue() {
+    if (!this.signaling || this._outgoingIceQueue.length === 0) return;
+    
+    // Process queue
+    const remainingQueue = [];
+    for (const candidate of this._outgoingIceQueue) {
+      try {
+        await this.signaling.sendSignal('ICE_CANDIDATE', candidate);
+        console.log('[WebRTCTransport] Successfully sent queued ICE candidate');
+      } catch (err) {
+        console.warn('[WebRTCTransport] Failed to send ICE candidate (will retry):', err.message);
+        remainingQueue.push(candidate);
+      }
+    }
+    this._outgoingIceQueue = remainingQueue;
+    
+    if (this._outgoingIceQueue.length > 0) {
+      if (this._iceQueueTimeout) clearTimeout(this._iceQueueTimeout);
+      this._iceQueueTimeout = setTimeout(() => this._flushOutgoingIceQueue(), 1000);
+    }
   }
 
   async _doIceRestart() {
