@@ -234,9 +234,15 @@ transferState: ${this.status}\n`);
             if (this.isTransferCancelled || this.status === 'COMPLETED') return;
             if (this.peerConnection?.iceConnectionState === 'connected' || this.peerConnection?.iceConnectionState === 'completed') return;
 
+            // Do not fail if data channel is still open (indicates backpressure, not fatal death)
+            if (this.dataChannel?.readyState === 'open') {
+              console.warn('[ReceiverTransport] Ignoring failed state because DataChannel is still open.');
+              return;
+            }
+
             this.onError(new Error('WebRTC connection failed. Please check your network and try again.'));
             this._updateStatus('FAILED');
-          }, 30000); // 30-second recovery grace period
+          }, 45000); // 45-second recovery grace period (matches sender)
         }
       } else if (state === 'disconnected') {
         console.warn('[ReceiverTransport] PeerConnection disconnected (may self-recover)');
@@ -330,9 +336,13 @@ transferState: ${this.status}\n`);
           this.progress.currentFile = fileInfo;
           this.receivedFiles.set(fileInfo.id, {
             info: fileInfo,
-            chunks: new Map(),
+            pendingParts: [],
+            pendingPartsSize: 0,
+            mergedBlobs: [],
+            chunkCount: 0,
             plaintextBytes: 0,
-            pendingDecryptions: 0
+            pendingDecryptions: 0,
+            lastAckBytes: 0
           });
         } else {
           console.warn('[ReceiverTransport] FILE_START for unknown fileId:', fileId);
@@ -403,12 +413,29 @@ transferState: ${this.status}\n`);
       const fileInfo = this.manifest?.files?.find(f => f.id === fileId) || {
         id: fileId, name: 'download', size: 0, totalChunks, type: 'application/octet-stream'
       };
-      fileRecord = { info: fileInfo, chunks: new Map(), plaintextBytes: 0, pendingDecryptions: 0 };
+      fileRecord = {
+        info: fileInfo,
+        // Memory-efficient storage: accumulate ArrayBuffer refs in a flat array,
+        // and periodically merge into larger Blobs to avoid 100K+ individual objects
+        pendingParts: [],       // ArrayBuffer references waiting to be merged
+        pendingPartsSize: 0,    // Current byte count of pendingParts
+        mergedBlobs: [],        // Already-merged large Blobs (~4MB each)
+        chunkCount: 0,          // Total chunks received so far
+        plaintextBytes: 0,
+        pendingDecryptions: 0,
+        lastAckBytes: 0
+      };
       this.receivedFiles.set(fileId, fileRecord);
       console.warn('[ReceiverTransport] Received chunk before FILE_START for:', fileId);
     }
 
-    // Initialize if not present
+    // Initialize if not present (handles FILE_START-created records)
+    if (fileRecord.pendingParts === undefined) {
+      fileRecord.pendingParts = [];
+      fileRecord.pendingPartsSize = 0;
+      fileRecord.mergedBlobs = [];
+      fileRecord.chunkCount = 0;
+    }
     if (fileRecord.pendingDecryptions === undefined) {
       fileRecord.pendingDecryptions = 0;
     }
@@ -425,18 +452,30 @@ transferState: ${this.status}\n`);
           return; // Skip this chunk — integrity check will catch it
         }
       }
-      // Safely wrap in Blob to spool to disk and avoid heap overflow.
-      // Use the chunks Map to guarantee ordering even if decrypt promises resolve out of order.
-      const blobChunk = new Blob([plaintextPayload]);
-      fileRecord.chunks.set(chunkIndex, blobChunk);
-      
+
+      // Memory-efficient storage: accumulate ArrayBuffer references
+      // and periodically merge into larger Blobs to keep object count bounded.
+      // For a 1.6GB file with 16KB chunks (101K chunks), this reduces
+      // from 101K Blob objects to ~400 merged Blobs.
+      fileRecord.pendingParts.push(plaintextPayload);
+      fileRecord.pendingPartsSize += plaintextPayload.byteLength;
+      fileRecord.chunkCount++;
+
+      // Merge into a single Blob every 4MB to keep memory bounded
+      const MERGE_THRESHOLD = 4 * 1024 * 1024;
+      if (fileRecord.pendingPartsSize >= MERGE_THRESHOLD) {
+        fileRecord.mergedBlobs.push(new Blob(fileRecord.pendingParts));
+        fileRecord.pendingParts = [];
+        fileRecord.pendingPartsSize = 0;
+      }
+
       fileRecord.plaintextBytes += plaintextPayload.byteLength;
 
       this.progress.receivedBytes += plaintextPayload.byteLength;
       this._bytesSinceLastUpdate += plaintextPayload.byteLength;
 
       // Flow control: Send ACK periodically to prevent sender from overflowing
-      if (fileRecord.lastAckBytes === undefined) fileRecord.lastAckBytes = 0;
+      // Use global receivedBytes for consistent comparison with sender's flow window
       if (fileRecord.plaintextBytes - fileRecord.lastAckBytes >= 512 * 1024) { // Ack every 512KB
         fileRecord.lastAckBytes = fileRecord.plaintextBytes;
         if (this.dataChannel?.readyState === 'open') {
@@ -478,41 +517,32 @@ transferState: ${this.status}\n`);
       return;
     }
 
-    // Wait for any pending async decryptions to finish before counting chunks
+    // Wait for any pending async decryptions to finish
     while (fileRecord.pendingDecryptions > 0) {
       await new Promise(resolve => setTimeout(resolve, 10));
     }
 
-    const { info, chunks } = fileRecord;
+    const { info, mergedBlobs = [], pendingParts = [], chunkCount = 0 } = fileRecord;
 
-    console.log(`[ReceiverTransport] Assembling: ${info.name} — received ${chunks.size}/${info.totalChunks} chunks`);
+    console.log(`[ReceiverTransport] Assembling: ${info.name} — received ${chunkCount}/${info.totalChunks} chunks, ${mergedBlobs.length} merged blobs + ${pendingParts.length} pending parts`);
 
     // Integrity check: chunk count must match manifest
-    if (chunks.size !== info.totalChunks) {
-      const errMsg = `File "${info.name}": received ${chunks.size} chunks but expected ${info.totalChunks}`;
+    if (chunkCount !== info.totalChunks) {
+      const errMsg = `File "${info.name}": received ${chunkCount} chunks but expected ${info.totalChunks}`;
       console.error('[ReceiverTransport] Chunk count mismatch:', errMsg);
-      // Only fire error if not already completed (prevents race condition)
       if (!this.isCompleted) {
         this.onError(new Error(errMsg));
       }
       return;
     }
 
-    // Assemble chunks in strict order
-    const sortedChunks = [];
-    for (let i = 0; i < info.totalChunks; i++) {
-      const chunk = chunks.get(i);
-      if (!chunk) {
-        const errMsg = `File "${info.name}": chunk ${i} is missing`;
-        console.error('[ReceiverTransport]', errMsg);
-        if (!this.isCompleted) this.onError(new Error(errMsg));
-        return;
-      }
-      sortedChunks.push(chunk);
+    // Flush any remaining pending parts into the merged array
+    if (pendingParts.length > 0) {
+      mergedBlobs.push(new Blob(pendingParts));
     }
 
     const mimeType = info.type || 'application/octet-stream';
-    const blob = new Blob(sortedChunks, { type: mimeType });
+    const blob = new Blob(mergedBlobs, { type: mimeType });
 
     // Blob size must match the original plaintext file size
     if (blob.size !== info.size) {

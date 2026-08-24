@@ -533,25 +533,28 @@ progress: ${this.progress?.percentage}`);
 
     this.dataChannel.bufferedAmountLowThreshold = DYNAMIC_LOW_WATER_MARK;
     this._lastAckBytes = 0; // reset for the new file
+    this._filePlaintextBytesSent = 0; // Track plaintext bytes for flow control consistency
 
     for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
       if (this.isTransferCancelled) break;
 
-      // 1. WebRTC DataChannel backpressure
+      // 1. WebRTC DataChannel backpressure — wait if SCTP buffer is full
       if (this.dataChannel.bufferedAmount > DYNAMIC_HIGH_WATER_MARK) {
         await this._waitForBufferDrain(DYNAMIC_LOW_WATER_MARK);
       }
 
       // 2. Application-level Flow Control window (4MB maximum unacknowledged)
+      // Compare plaintext bytes sent vs receiver-reported plaintext bytes received
       const MAX_IN_FLIGHT = 4 * 1024 * 1024;
-      const start = chunkIndex * chunkSize;
-      while ((start - this._lastAckBytes) > MAX_IN_FLIGHT) {
+      while ((this._filePlaintextBytesSent - this._lastAckBytes) > MAX_IN_FLIGHT) {
         if (this.isTransferCancelled || this.status === 'FAILED') break;
         this._updateProgressStats();
         await new Promise(r => setTimeout(r, 50)); // wait for receiver ACK
       }
 
+      const start = chunkIndex * chunkSize;
       const end = Math.min(file.size, start + chunkSize);
+      const chunkPlaintextSize = end - start;
 
       const blobSlice = file.slice(start, end);
       const rawArrayBuffer = await blobSlice.arrayBuffer();
@@ -576,16 +579,20 @@ progress: ${this.progress?.percentage}`);
         } catch (e) {
           if (e.name === 'TypeError' || e.name === 'OperationError' || (e.message && e.message.toLowerCase().includes('buffer'))) {
             console.warn(`[WebRTCTransport] Buffer full or send error on chunk ${chunkIndex}, backing off...`);
-            await new Promise(r => setTimeout(r, 50));
+            await new Promise(r => setTimeout(r, 100));
+            // Also wait for buffer drain before retrying
+            if (this.dataChannel.bufferedAmount > DYNAMIC_HIGH_WATER_MARK) {
+              await this._waitForBufferDrain(DYNAMIC_LOW_WATER_MARK);
+            }
           } else {
             throw e;
           }
         }
       }
 
-      const bytesSentThisChunk = end - start;
-      this.progress.sentBytes += bytesSentThisChunk;
-      this._bytesSinceLastUpdate += bytesSentThisChunk;
+      this._filePlaintextBytesSent += chunkPlaintextSize;
+      this.progress.sentBytes += chunkPlaintextSize;
+      this._bytesSinceLastUpdate += chunkPlaintextSize;
 
       this._updateProgressStats();
     }
