@@ -191,7 +191,7 @@ export default function SenderPage() {
       }
     }
 
-    if (status === 'WAITING' || status === 'CONNECTED') {
+    if (status === 'WAITING' || status === 'CONNECTED' || status === 'CREATING' || status === 'NEGOTIATING') {
       return (
         <motion.div
           key="waiting"
@@ -208,7 +208,6 @@ export default function SenderPage() {
             status={status}
             mode={mode}
           />
-
         </motion.div>
       );
     }
