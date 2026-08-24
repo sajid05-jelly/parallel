@@ -251,6 +251,22 @@ export class WebRTCTransport {
           this._recoveryTimeout = setTimeout(() => {
             if (this.isTransferCancelled || this.status === 'COMPLETED') return;
             if (this.peerConnection?.iceConnectionState === 'connected' || this.peerConnection?.iceConnectionState === 'completed') return;
+            
+            // Do not fail if data channel is still magically open and bufferedAmount is high (indicating backpressure, not fatal death)
+            if (this.dataChannel?.readyState === 'open' && this.dataChannel?.bufferedAmount > 0) {
+              console.warn('[WebRTCTransport] Ignoring failed state because DataChannel is open and buffering data.');
+              return;
+            }
+
+            console.error(`[TRANSFER FATAL ERROR]
+reason: connection timeout grace period expired
+dataChannelState: ${this.dataChannel?.readyState}
+connectionState: ${this.peerConnection?.connectionState}
+iceState: ${this.peerConnection?.iceConnectionState}
+bufferedAmount: ${this.dataChannel?.bufferedAmount}
+sentBytes: ${this.progress?.sentBytes}
+fileSize: ${this.progress?.currentFile?.size}
+progress: ${this.progress?.percentage}`);
 
             if (this.mode === 'nearby') {
               this.onError(new Error('Nearby Transfer: WebRTC connection failed. Ensure both devices are on the same Wi-Fi.'));
@@ -258,7 +274,7 @@ export class WebRTCTransport {
               this.onError(new Error('WebRTC connection failed. This can happen on restrictive networks. Try the other transfer mode.'));
             }
             this._updateStatus('FAILED');
-          }, 30000); // 30-second recovery grace period
+          }, 45000); // Increased 45-second recovery grace period
         }
       } else if (state === 'disconnected') {
         console.warn('[WebRTCTransport] PeerConnection disconnected (may self-recover)');

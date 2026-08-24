@@ -32,6 +32,37 @@ export function useTransfer() {
   const [token, setToken] = useState(null);
   const [error, setError] = useState(null);
   const [qrExpiry, setQrExpiry] = useState(null);
+  const wakeLockRef = useRef(null);
+
+  // Automatically request WakeLock when transferring to prevent mobile screen sleep from killing WebRTC
+  useEffect(() => {
+    let active = true;
+    const manageWakeLock = async () => {
+      if (status === 'TRANSFERRING' && 'wakeLock' in navigator) {
+        try {
+          if (!wakeLockRef.current) {
+            wakeLockRef.current = await navigator.wakeLock.request('screen');
+            console.log('[useTransfer] Screen Wake Lock acquired.');
+          }
+        } catch (err) {
+          console.warn('[useTransfer] Wake Lock failed:', err);
+        }
+      } else if ((status === 'COMPLETED' || status === 'FAILED' || status === 'IDLE' || status === 'CANCELLED') && wakeLockRef.current) {
+        wakeLockRef.current.release().then(() => {
+          if (active) {
+            console.log('[useTransfer] Screen Wake Lock released.');
+            wakeLockRef.current = null;
+          }
+        }).catch(() => {});
+      }
+    };
+    
+    manageWakeLock();
+    
+    return () => {
+      active = false;
+    };
+  }, [status]);
 
   const transportRef = useRef(null);
   const modeRef = useRef(mode);

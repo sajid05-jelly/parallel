@@ -381,19 +381,11 @@ export class WebRTCReceiverTransport {
           return; // Skip this chunk — integrity check will catch it
         }
       }
-      // Memory optimization: accumulate chunks to prevent creating 25,000+ tiny Blobs,
-      // which can crash mobile Safari due to excessive Blob indexing.
-      if (!fileRecord.activeBlobParts) fileRecord.activeBlobParts = [];
-      if (!fileRecord.mergedBlobs) fileRecord.mergedBlobs = [];
+      // Safely wrap in Blob to spool to disk and avoid heap overflow.
+      // Use the chunks Map to guarantee ordering even if decrypt promises resolve out of order.
+      const blobChunk = new Blob([plaintextPayload]);
+      fileRecord.chunks.set(chunkIndex, blobChunk);
       
-      fileRecord.activeBlobParts.push(plaintextPayload);
-      
-      // Every ~4MB, merge parts into a single Blob and flush to disk
-      let activeSize = fileRecord.activeBlobParts.reduce((acc, p) => acc + p.byteLength, 0);
-      if (activeSize >= 4 * 1024 * 1024) {
-        fileRecord.mergedBlobs.push(new Blob(fileRecord.activeBlobParts));
-        fileRecord.activeBlobParts = [];
-      }
       fileRecord.plaintextBytes += plaintextPayload.byteLength;
 
       this.progress.receivedBytes += plaintextPayload.byteLength;
@@ -447,17 +439,36 @@ export class WebRTCReceiverTransport {
       await new Promise(resolve => setTimeout(resolve, 10));
     }
 
-    const { info, mergedBlobs = [], activeBlobParts = [] } = fileRecord;
+    const { info, chunks } = fileRecord;
 
-    console.log(`[ReceiverTransport] Assembling: ${info.name}`);
+    console.log(`[ReceiverTransport] Assembling: ${info.name} — received ${chunks.size}/${info.totalChunks} chunks`);
 
-    // Flush any remaining active blob parts
-    if (activeBlobParts.length > 0) {
-      mergedBlobs.push(new Blob(activeBlobParts));
+    // Integrity check: chunk count must match manifest
+    if (chunks.size !== info.totalChunks) {
+      const errMsg = `File "${info.name}": received ${chunks.size} chunks but expected ${info.totalChunks}`;
+      console.error('[ReceiverTransport] Chunk count mismatch:', errMsg);
+      // Only fire error if not already completed (prevents race condition)
+      if (!this.isCompleted) {
+        this.onError(new Error(errMsg));
+      }
+      return;
+    }
+
+    // Assemble chunks in strict order
+    const sortedChunks = [];
+    for (let i = 0; i < info.totalChunks; i++) {
+      const chunk = chunks.get(i);
+      if (!chunk) {
+        const errMsg = `File "${info.name}": chunk ${i} is missing`;
+        console.error('[ReceiverTransport]', errMsg);
+        if (!this.isCompleted) this.onError(new Error(errMsg));
+        return;
+      }
+      sortedChunks.push(chunk);
     }
 
     const mimeType = info.type || 'application/octet-stream';
-    const blob = new Blob(mergedBlobs, { type: mimeType });
+    const blob = new Blob(sortedChunks, { type: mimeType });
 
     // Blob size must match the original plaintext file size
     if (blob.size !== info.size) {
