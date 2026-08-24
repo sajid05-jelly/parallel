@@ -119,9 +119,38 @@ export default function ReceiverPage({ token, keyString }) {
   }, [getCompletedFileBlob]);
 
   useEffect(() => {
+    console.log(`[DIAG_LIFECYCLE_RECEIVER] ReceiverPage MOUNTED. Token: ${token}`);
+    const handleVisChange = () => console.log(`[DIAG_LIFECYCLE_RECEIVER] visibilitychange: ${document.visibilityState}`);
+    const handlePageShow = (e) => console.log(`[DIAG_LIFECYCLE_RECEIVER] pageshow (persisted: ${e.persisted})`);
+    const handlePageHide = (e) => console.log(`[DIAG_LIFECYCLE_RECEIVER] pagehide (persisted: ${e.persisted})`);
+    const handleBeforeUnload = () => console.log(`[DIAG_LIFECYCLE_RECEIVER] beforeunload fired`);
+    
+    document.addEventListener('visibilitychange', handleVisChange);
+    window.addEventListener('pageshow', handlePageShow);
+    window.addEventListener('pagehide', handlePageHide);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      console.log(`[DIAG_LIFECYCLE_RECEIVER] ReceiverPage UNMOUNTED. Token: ${token}`);
+      document.removeEventListener('visibilitychange', handleVisChange);
+      window.removeEventListener('pageshow', handlePageShow);
+      window.removeEventListener('pagehide', handlePageHide);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [token]);
+
+  useEffect(() => {
+    console.log(`[DIAG_LIFECYCLE_RECEIVER] Receiver status changed to: ${status}`);
+    if (status === 'CONNECTING' || status === 'WAITING' || status === 'RECOVERING') {
+      console.trace(`[DIAG_TRACE_RECEIVER] UI transitioned to ${status}`);
+    }
+  }, [status]);
+
+  useEffect(() => {
     if (token && keyString && !initializedPortals.has(token)) {
       initializedPortals.add(token);
       console.log('[ReceiverPage] Initializing connection for portal', token);
+      console.trace('[DIAG_TRACE_RECEIVER] connect called');
       connect(token, keyString);
     }
     

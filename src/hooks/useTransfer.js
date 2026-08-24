@@ -188,6 +188,7 @@ export function useTransfer() {
   }, []);
 
   const createPortal = useCallback(async () => {
+    console.trace('[DIAG_TRACE_SENDER] createPortal called');
     setFiles((currentFiles) => {
       if (currentFiles.length === 0) return currentFiles;
       _doCreatePortal(currentFiles);

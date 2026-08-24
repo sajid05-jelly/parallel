@@ -109,7 +109,10 @@ export class WebRTCTransport {
         if (this.peerConnection) {
           try {
             await this.peerConnection.setRemoteDescription(new RTCSessionDescription(answerSdp));
-            this._updateStatus('NEGOTIATING');
+            if (this.status === 'WAITING' || this.status === 'CREATING') {
+              console.trace('[DIAG_TRACE_SENDER] _updateStatus(NEGOTIATING)'); 
+              this._updateStatus('NEGOTIATING');
+            }
 
             // Process queued ICE candidates
             while (this._iceCandidateQueue.length > 0) {
@@ -164,7 +167,7 @@ transferState: ${this.status}\n`);
           this._abortOldStream = true;
           this.progress = { ...this.progress, sentBytes: 0, percentage: 0, currentFile: null, filesSent: 0 };
         }
-        this._updateStatus('NEGOTIATING');
+        console.trace('[DIAG_TRACE_SENDER] _updateStatus(NEGOTIATING)'); this._updateStatus('NEGOTIATING');
         if (this.peerConnection && this.peerConnection.localDescription) {
           await this.signaling.sendSignal('OFFER', this.peerConnection.localDescription);
         }
@@ -190,7 +193,7 @@ dataChannelState: ${this.dataChannel?.readyState || 'none'}\n`);
     // 6. Broadcast Offer SDP via Signaling
     await this.signaling.sendSignal('OFFER', offer);
 
-    this._updateStatus('WAITING');
+    console.trace('[DIAG_TRACE_SENDER] _updateStatus(WAITING)'); this._updateStatus('WAITING');
 
     // Connection timeout — only fire if we never reached a data-flowing state
     this._connectionTimeout = setTimeout(() => {
@@ -279,10 +282,10 @@ dataChannelState: ${this.dataChannel?.readyState || 'none'}\n`);
         }
 
       } else if (state === 'disconnected') {
+        console.log('[DIAG_WEBRTC] ICE connection disconnected (may self-recover)');
         this._iceHealthy = false;
-        console.warn('[WebRTCTransport] PeerConnection disconnected — pausing sends, waiting for recovery...');
         if (this.status === 'TRANSFERRING') {
-          this._updateStatus('RECOVERING');
+          console.trace('[DIAG_TRACE_SENDER] _updateStatus(RECOVERING)'); this._updateStatus('RECOVERING');
         }
         
         // Attempt ICE restart to recover the connection
@@ -391,7 +394,7 @@ progress: ${this.progress?.percentage}`);
       }
       if (!this.isCompleted && this.status === 'TRANSFERRING') {
         console.warn('[WebRTCTransport] DataChannel closed unexpectedly! Waiting for ICE recovery...');
-        this._updateStatus('RECOVERING');
+        console.trace('[DIAG_TRACE_SENDER] _updateStatus(RECOVERING)'); this._updateStatus('RECOVERING');
       }
     };
   }

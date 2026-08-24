@@ -13,23 +13,49 @@ import ErrorState from '../components/ErrorState';
 
 export default function SenderPage() {
   const {
-    files,
     status,
-    mode,
-    setMode,
+    files,
     progress,
-    transferUrl,
-    token,
     error,
-    qrExpiry,
-    addFiles,
-    removeFile,
-    clearFiles,
     createPortal,
     cancelTransfer,
+    removeFile,
     reset,
-    retry
+    retry,
+    transferUrl,
+    qrExpiry,
+    addFiles,
+    mode,
+    setMode,
   } = useTransfer();
+
+  useEffect(() => {
+    console.log(`[DIAG_LIFECYCLE_SENDER] SenderPage MOUNTED. Mode: ${mode}`);
+    const handleVisChange = () => console.log(`[DIAG_LIFECYCLE_SENDER] visibilitychange: ${document.visibilityState}`);
+    const handlePageShow = (e) => console.log(`[DIAG_LIFECYCLE_SENDER] pageshow (persisted: ${e.persisted})`);
+    const handlePageHide = (e) => console.log(`[DIAG_LIFECYCLE_SENDER] pagehide (persisted: ${e.persisted})`);
+    const handleBeforeUnload = () => console.log(`[DIAG_LIFECYCLE_SENDER] beforeunload fired`);
+    
+    document.addEventListener('visibilitychange', handleVisChange);
+    window.addEventListener('pageshow', handlePageShow);
+    window.addEventListener('pagehide', handlePageHide);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      console.log(`[DIAG_LIFECYCLE_SENDER] SenderPage UNMOUNTED. Mode: ${mode}`);
+      document.removeEventListener('visibilitychange', handleVisChange);
+      window.removeEventListener('pageshow', handlePageShow);
+      window.removeEventListener('pagehide', handlePageHide);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [mode]);
+
+  useEffect(() => {
+    console.log(`[DIAG_LIFECYCLE_SENDER] Sender status changed to: ${status}`);
+    if (status === 'WAITING' || status === 'CREATING' || status === 'NEGOTIATING') {
+      console.trace(`[DIAG_TRACE_SENDER] UI transitioned to QR/Portal screen (status=${status})`);
+    }
+  }, [status]);
 
   const handleFilesSelected = (fileList) => {
     addFiles(fileList);
