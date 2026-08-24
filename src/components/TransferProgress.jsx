@@ -42,18 +42,20 @@ const TransferProgress = ({ progress = {}, direction = 'sending', status }) => {
       <GlassCard className="flex flex-col p-8 rounded-[24px]">
         {/* Header */}
         <div className="flex items-center gap-3 mb-8">
-          <div className={`w-2.5 h-2.5 rounded-full ${isComplete ? 'bg-[#5BA5A5]' : 'bg-[#5BA5A5] animate-pulse shadow-[0_0_10px_rgba(91,165,165,0.6)]'}`}></div>
+          <div className={`w-2.5 h-2.5 rounded-full ${isComplete ? 'bg-[#5BA5A5]' : status === 'RECOVERING' ? 'bg-[#D4A574] animate-pulse shadow-[0_0_10px_rgba(212,165,116,0.6)]' : 'bg-[#5BA5A5] animate-pulse shadow-[0_0_10px_rgba(91,165,165,0.6)]'}`}></div>
           <h3 className="text-[13px] font-semibold text-[#F3F4F6] uppercase tracking-widest">
             {isComplete 
               ? (direction === 'sending' ? 'Transfer Complete' : 'Transfer Complete')
-              : (direction === 'sending' ? 'Sending Data...' : 'Receiving Data...')
+              : status === 'RECOVERING'
+                ? 'Reconnecting...'
+                : (direction === 'sending' ? 'Sending Data...' : 'Receiving Data...')
             }
           </h3>
         </div>
 
         {/* Data Stream Animation */}
         {!isComplete && (
-          <div className="w-full relative flex items-center justify-between mb-10 mt-2 px-1">
+          <div className={`w-full relative flex items-center justify-between mb-10 mt-2 px-1 ${status === 'RECOVERING' ? 'opacity-30' : ''}`}>
             {/* Source Node */}
             <div className="w-10 h-10 rounded-full border border-white/[0.08] bg-white/[0.02] flex items-center justify-center z-10 shadow-[0_4px_15px_rgba(0,0,0,0.2)]">
               <svg className="w-4 h-4 text-[#9CA3AF]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">

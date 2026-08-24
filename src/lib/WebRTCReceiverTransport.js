@@ -222,8 +222,12 @@ transferState: ${this.status}\n`);
           clearTimeout(this._recoveryTimeout);
           this._recoveryTimeout = null;
         }
-        if (this.status !== 'WAITING' && this.status !== 'TRANSFERRING' && this.status !== 'COMPLETED') {
-          this._updateStatus('CONNECTED');
+        if (this.status === 'RECOVERING' || (this.status !== 'WAITING' && this.status !== 'TRANSFERRING' && this.status !== 'COMPLETED')) {
+          if (this.status === 'RECOVERING') {
+            this._updateStatus('TRANSFERRING');
+          } else {
+            this._updateStatus('CONNECTED');
+          }
         }
       } else if (state === 'failed') {
         if (this._connectionTimeout) {
@@ -250,6 +254,9 @@ transferState: ${this.status}\n`);
         }
       } else if (state === 'disconnected') {
         console.warn(`[ReceiverTransport] PeerConnection disconnected — waiting for sender ICE restart. dataChannel: ${this.dataChannel?.readyState}`);
+        if (this.status === 'TRANSFERRING') {
+          this._updateStatus('RECOVERING');
+        }
       }
     };
 
@@ -283,11 +290,10 @@ transferState: ${this.status}\n`);
       this.dataChannel.onclose = () => {
         console.log('[ReceiverTransport] DataChannel closed. isCompleted:', this.isCompleted, 'status:', this.status);
         this._stopHeartbeat();
-        // Only treat as error if we weren't already done
+        // Do not immediately fail. The ICE connection might be recovering.
         if (!this.isCompleted && this.status === 'TRANSFERRING') {
-          console.error('[ReceiverTransport] DataChannel closed unexpectedly during transfer!');
-          this.onError(new Error('Connection dropped during file transfer. Please try again.'));
-          this._updateStatus('FAILED');
+          console.warn('[ReceiverTransport] DataChannel closed unexpectedly! Waiting for ICE recovery...');
+          this._updateStatus('RECOVERING');
         }
       };
     };
@@ -440,6 +446,12 @@ transferState: ${this.status}\n`);
       fileRecord.mergedBlobs = [];
       fileRecord.chunkCount = 0;
     }
+
+    // Ignore duplicate chunks during a connection resume
+    if (chunkIndex < fileRecord.chunkCount) {
+      return;
+    }
+
     if (fileRecord.pendingDecryptions === undefined) {
       fileRecord.pendingDecryptions = 0;
     }
@@ -485,7 +497,8 @@ transferState: ${this.status}\n`);
         if (this.dataChannel?.readyState === 'open') {
           this.dataChannel.send(encodeControlMessage(MESSAGE_TYPES.ACK, {
             fileId,
-            receivedBytes: fileRecord.plaintextBytes
+            receivedBytes: fileRecord.plaintextBytes,
+            chunkIndex // Explicitly ACK the highest successfully processed chunk
           }));
         }
       }

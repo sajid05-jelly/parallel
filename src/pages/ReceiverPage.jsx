@@ -273,7 +273,7 @@ export default function ReceiverPage({ token, keyString }) {
             </motion.div>
           )}
 
-          {status === 'TRANSFERRING' && (
+          {(status === 'TRANSFERRING' || status === 'RECOVERING') && (
             <motion.div
               key="transferring"
               initial={{ opacity: 0, scale: 0.95 }}

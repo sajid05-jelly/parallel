@@ -213,7 +213,7 @@ export default function SenderPage() {
       );
     }
 
-    if (status === 'TRANSFERRING') {
+    if (status === 'TRANSFERRING' || status === 'RECOVERING') {
       return (
         <motion.div
           key="transferring"
