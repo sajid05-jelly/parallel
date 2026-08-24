@@ -152,6 +152,12 @@ transferState: ${this.status}\n`);
           return; // Do NOT destroy existing connection. The active receiver must continue.
         }
 
+        if (this.status === 'COMPLETED') {
+          console.warn('[WebRTCTransport] Transfer already completed. Cannot rejoin.');
+          await this.signaling.sendSignal('ALREADY_CONNECTED', { message: 'Transfer already completed.' });
+          return;
+        }
+
         console.log('[WebRTCTransport] Receiver claimed portal. Re-broadcasting WebRTC Offer.');
         if (this.status === 'RECOVERING') {
           console.warn('[WebRTCTransport] Receiver re-joined during RECOVERING. Aborting old stream to start fresh.');

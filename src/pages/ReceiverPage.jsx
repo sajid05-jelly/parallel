@@ -79,12 +79,12 @@ export default function ReceiverPage({ token, keyString }) {
 
     const ios = isIOSDevice();
 
-    // iOS Safari/Chrome: <a download> is silently ignored.
-    // Use the Web Share API so user gets the native iOS Share Sheet.
-    if (ios && navigator.share && navigator.canShare) {
+    // iOS Safari/Chrome: <a download> was historically ignored but works in iOS 13+.
+    // We use Web Share API for smaller files so the user gets the native Share Sheet (Save Image/Video).
+    // However, sharing massive files (>50MB) via navigator.share causes an immediate Out Of Memory crash on iOS.
+    const isMassiveFile = item.blob.size > 50 * 1024 * 1024; // > 50MB
+    if (ios && navigator.share && navigator.canShare && !isMassiveFile) {
       try {
-        // iOS requires a precise type to allow "Save Image/Video" in the Share Sheet.
-        // It also often fails if `title` or `text` is shared alongside the file.
         const fallbackType = item.filename.toLowerCase().endsWith('.jpg') || item.filename.toLowerCase().endsWith('.jpeg') ? 'image/jpeg' 
                            : item.filename.toLowerCase().endsWith('.png') ? 'image/png'
                            : item.filename.toLowerCase().endsWith('.mp4') ? 'video/mp4'
@@ -97,12 +97,10 @@ export default function ReceiverPage({ token, keyString }) {
         });
         
         if (navigator.canShare({ files: [fileObj] })) {
-          // IMPORTANT: Share ONLY the file. Adding title/url forces iOS to treat it as mixed content, breaking "Save Image".
           await navigator.share({ files: [fileObj] });
           return;
         }
       } catch (err) {
-        // User dismissed the share sheet — not an error
         if (err.name === 'AbortError') return;
         console.warn('[ReceiverPage] iOS share failed, falling back to blob URL:', err);
       }
