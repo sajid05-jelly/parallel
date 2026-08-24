@@ -359,7 +359,7 @@ progress: ${this.progress?.percentage}`);
     this.dataChannel.onopen = () => {
       console.log('[WebRTCTransport] RTCDataChannel opened successfully');
       this._iceHealthy = true;
-      this._negotiatedChunkSize = 16384; 
+      this._negotiatedChunkSize = 65536; 
       console.log(`[WebRTCTransport] Negotiated chunk size: ${this._negotiatedChunkSize} bytes`);
 
       this.files = this.files.map(f => ({
@@ -652,8 +652,8 @@ progress: ${this.progress?.percentage}`);
     const chunkSize = this._negotiatedChunkSize;
     const totalChunks = fileInfo.totalChunks;
 
-    const DYNAMIC_HIGH_WATER_MARK = 256 * 1024;
-    const DYNAMIC_LOW_WATER_MARK = 64 * 1024;
+    const DYNAMIC_HIGH_WATER_MARK = 4 * 1024 * 1024;
+    const DYNAMIC_LOW_WATER_MARK = 1024 * 1024;
 
     this.dataChannel.bufferedAmountLowThreshold = DYNAMIC_LOW_WATER_MARK;
     this._lastAckBytes = startChunkIndex * chunkSize; // Start from where we left off
@@ -696,7 +696,7 @@ progress: ${this.progress?.percentage}`);
       }
 
       // 4. Application-level Flow Control (2MB window)
-      const MAX_IN_FLIGHT = 2 * 1024 * 1024;
+      const MAX_IN_FLIGHT = 8 * 1024 * 1024;
       while ((this._filePlaintextBytesSent - this._lastAckBytes) > MAX_IN_FLIGHT) {
         if (this.isTransferCancelled || this.status === 'FAILED' || this._abortOldStream) throw new Error('Transfer cancelled or failed');
         this._updateProgressStats();
