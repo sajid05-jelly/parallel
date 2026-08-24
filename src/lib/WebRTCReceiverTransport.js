@@ -218,6 +218,10 @@ transferState: ${this.status}\n`);
           clearTimeout(this._connectionTimeout);
           this._connectionTimeout = null;
         }
+        if (this._recoveryTimeout) {
+          clearTimeout(this._recoveryTimeout);
+          this._recoveryTimeout = null;
+        }
         if (this.status !== 'WAITING' && this.status !== 'TRANSFERRING' && this.status !== 'COMPLETED') {
           this._updateStatus('CONNECTED');
         }
@@ -242,10 +246,10 @@ transferState: ${this.status}\n`);
 
             this.onError(new Error('WebRTC connection failed. Please check your network and try again.'));
             this._updateStatus('FAILED');
-          }, 45000); // 45-second recovery grace period (matches sender)
+          }, 45000);
         }
       } else if (state === 'disconnected') {
-        console.warn('[ReceiverTransport] PeerConnection disconnected (may self-recover)');
+        console.warn(`[ReceiverTransport] PeerConnection disconnected — waiting for sender ICE restart. dataChannel: ${this.dataChannel?.readyState}`);
       }
     };
 
