@@ -28,6 +28,8 @@ export default function useReceiver() {
     
     // Ignore duplicate connect calls if we are already connected or negotiating
     if (transportRef.current && (
+      transportRef.current.status === 'CREATING' ||
+      transportRef.current.status === 'WAITING' ||
       transportRef.current.status === 'CONNECTED' ||
       transportRef.current.status === 'NEGOTIATING' ||
       transportRef.current.status === 'TRANSFERRING'

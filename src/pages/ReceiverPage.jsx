@@ -54,6 +54,8 @@ function FileDownloadItem({ file, onDownload }) {
   );
 }
 
+const initializedPortals = new Set();
+
 export default function ReceiverPage({ token, keyString }) {
 
   const {
@@ -119,9 +121,18 @@ export default function ReceiverPage({ token, keyString }) {
   }, [getCompletedFileBlob]);
 
   useEffect(() => {
-    if (token && keyString) {
+    if (token && keyString && !initializedPortals.has(token)) {
+      initializedPortals.add(token);
+      console.log('[ReceiverPage] Initializing connection for portal', token);
       connect(token, keyString);
     }
+    
+    return () => {
+      // Delay removal to allow React StrictMode to remount without triggering a second connection
+      setTimeout(() => {
+        initializedPortals.delete(token);
+      }, 1000);
+    };
   }, [token, keyString, connect]);
 
   const totalSize = files.reduce((acc, f) => acc + (f.size || 0), 0);

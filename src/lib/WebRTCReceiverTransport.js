@@ -60,26 +60,65 @@ export class WebRTCReceiverTransport {
     this.keyString = keyString;
 
     this._updateStatus('CREATING');
+    this.receiverInstanceId = Math.random().toString(36).substring(7);
+
+    console.log(`\n[PORTAL CONNECTION]
+portalId: ${this.token}
+receiverInstanceId: ${this.receiverInstanceId}
+existingPeerConnection: ${!!this.peerConnection}
+existingDataChannel: ${!!this.dataChannel}
+connectionState: ${this.peerConnection?.connectionState || 'none'}
+iceConnectionState: ${this.peerConnection?.iceConnectionState || 'none'}
+transferState: ${this.status}\n`);
 
     // 1. Import AES key from URL fragment
     if (keyString) {
       this.encryptionKey = await importEncryptionKey(keyString);
     }
 
-    // 2. Validate session & claim receiver slot in database
-    const { session, receiverCredential, error } = await connectReceiver(token);
-    if (error || !session) {
-      throw error || new Error('Portal expired or unavailable');
-    }
+    console.log(`\n[PORTAL JOIN]
+portalId: ${this.token}
+receiverInstanceId: ${this.receiverInstanceId}
+connectionState: ${this.peerConnection?.connectionState || 'none'}
+`);
 
-    this.session = session;
-    this.sessionId = session.id;
+    // 2. Validate session & claim receiver slot in database
+    try {
+      const { session, receiverCredential, error } = await connectReceiver(token);
+      if (error || !session) {
+        throw error || new Error('Portal expired or unavailable');
+      }
+
+      this.session = session;
+      this.sessionId = session.id;
+    } catch (e) {
+      if (e.message === 'ALREADY_CONNECTED') {
+        console.error(`\n[PORTAL ALREADY CONNECTED]
+portalId: ${this.token}
+receiverInstanceId: ${this.receiverInstanceId}
+pcState: ${this.peerConnection?.connectionState || 'none'}
+dataChannelState: ${this.dataChannel?.readyState || 'none'}
+transferState: ${this.status}\n`);
+      }
+      throw e;
+    }
 
     // 3. Initialize Signaling
     this.signaling = new SupabaseSignaling(this.sessionId, 'receiver');
     this._iceCandidateQueue = [];
 
     await this.signaling.subscribe({
+      onAlreadyConnected: () => {
+        console.error(`\n[PORTAL ALREADY CONNECTED]
+portalId: ${this.token}
+receiverInstanceId: ${this.receiverInstanceId}
+transferState: ${this.status}\n`);
+        if (!this.isCompleted) {
+          this.onError(new Error('ALREADY_CONNECTED'));
+          this._updateStatus('FAILED');
+          this.cancel();
+        }
+      },
       onOffer: async (offerSdp) => {
         console.log('[ReceiverTransport] Received Offer SDP from sender');
         await this._handleOffer(offerSdp);

@@ -168,11 +168,6 @@ export async function connectReceiver(token) {
       throw new Error('EXPIRED');
     }
     
-    if (session.one_receiver_mode && session.receiver_connected) {
-      console.warn('[SessionManager] One Receiver Mode active. Session already connected.');
-      throw new Error('ALREADY_CONNECTED');
-    }
-
     if (session.status === 'CANCELLED' || session.status === 'EXPIRED') {
       throw new Error(session.status);
     }

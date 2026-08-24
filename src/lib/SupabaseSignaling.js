@@ -128,6 +128,9 @@ export class SupabaseSignaling {
       case 'CANCEL':
         if (this.callbacks.onCancel) this.callbacks.onCancel();
         break;
+      case 'ALREADY_CONNECTED':
+        if (this.callbacks.onAlreadyConnected) this.callbacks.onAlreadyConnected();
+        break;
       default:
         break;
     }

@@ -136,6 +136,18 @@ export class WebRTCTransport {
         }
       },
       onReceiverClaimed: async () => {
+        console.log(`\n[PORTAL JOIN REQUEST]
+portalId: ${this.token}
+alreadyConnected: ${this.peerConnection?.connectionState === 'connected'}
+connectionState: ${this.peerConnection?.connectionState || 'none'}
+transferState: ${this.status}\n`);
+
+        if (this.status === 'TRANSFERRING' || this.status === 'CONNECTED') {
+          console.warn('[WebRTCTransport] ACTIVE_CONNECTION_EXISTS. Ignoring duplicate join request to protect active transfer.');
+          await this.signaling.sendSignal('ALREADY_CONNECTED', { message: 'Another device is already receiving.' });
+          return; // Do NOT destroy existing connection. The active receiver must continue.
+        }
+
         console.log('[WebRTCTransport] Receiver claimed portal. Re-broadcasting WebRTC Offer.');
         this._updateStatus('NEGOTIATING');
         if (this.peerConnection && this.peerConnection.localDescription) {
@@ -143,7 +155,12 @@ export class WebRTCTransport {
         }
       },
       onCancel: () => {
-        console.log('[WebRTCTransport] Receiver cancelled connection');
+        console.log(`\n[PEER CLOSE]
+reason: receiver cancelled
+portalId: ${this.token}
+transferState: ${this.status}
+pcState: ${this.peerConnection?.connectionState || 'none'}
+dataChannelState: ${this.dataChannel?.readyState || 'none'}\n`);
         this.cancelPortal();
       }
     });
