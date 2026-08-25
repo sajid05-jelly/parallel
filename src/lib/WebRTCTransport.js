@@ -132,10 +132,12 @@ export class WebRTCTransport {
     await this.signaling.subscribe({
       onAnswer: async (answerSdp) => {
         console.log('[WebRTCTransport] Received Answer SDP from receiver');
+        console.log(`\n[ICE_RECOVERY]\nANSWER_RECEIVED\n`);
         if (this.peerConnection) {
           try {
             await this.peerConnection.setRemoteDescription(new RTCSessionDescription(answerSdp));
             this._answerReceived = true;
+            console.log(`\n[ICE_RECOVERY]\nREMOTE_DESCRIPTION_SET\n`);
             console.log('[WebRTCTransport] Remote description (answer) set successfully');
             if (this.status === 'WAITING' || this.status === 'CREATING') {
               this._updateStatus('NEGOTIATING');
@@ -147,6 +149,7 @@ export class WebRTCTransport {
             for (const cand of retryQueue) {
               try {
                 await this.peerConnection.addIceCandidate(new RTCIceCandidate(cand));
+                console.log(`\n[ICE_RECOVERY]\nCANDIDATE_ADDED\n`);
               } catch (e) {
                 console.warn('[WebRTCTransport] Still failed to add queued ICE candidate:', e.message);
                 this._iceCandidateQueue.push(cand);
@@ -161,10 +164,15 @@ export class WebRTCTransport {
         console.log('[WebRTCTransport] Received ICE candidate from receiver');
         if (this.peerConnection && candidate) {
           try {
-            await this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+            if (this.peerConnection.remoteDescription) {
+              await this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+              console.log(`\n[ICE_RECOVERY]\nCANDIDATE_ADDED\n`);
+            } else {
+              this._iceCandidateQueue.push(candidate);
+              console.log(`\n[ICE_RECOVERY]\nCANDIDATE_QUEUED\ncandidate=${candidate.candidate}\n`);
+            }
           } catch (e) {
-            console.warn('[WebRTCTransport] Error adding remote ICE candidate, queueing it:', e.message);
-            this._iceCandidateQueue.push(candidate);
+            console.error('[WebRTCTransport] Error adding ICE candidate:', e);
           }
         }
       },
@@ -439,9 +447,16 @@ export class WebRTCTransport {
     this._reconnectInProgress = true;
     this._logDiagnostics('RECOVERY_START');
 
+    console.log(`\n[ICE_RECOVERY]
+START
+connectionState=${this.peerConnection?.connectionState}
+iceConnectionState=${this.peerConnection?.iceConnectionState}
+signalingState=${this.peerConnection?.signalingState}\n`);
+
     try {
       // ── Phase 1: PC connected but DC dead → just recreate DC ──
-      if (this.peerConnection?.connectionState === 'connected') {
+      if (this.peerConnection?.connectionState === 'connected' && 
+          ['connected', 'completed'].includes(this.peerConnection?.iceConnectionState)) {
         if (!this.dataChannel || this.dataChannel.readyState === 'closed' || this.dataChannel.readyState === 'closing') {
           console.log('[RECOVERY] Phase 1: PC connected but DataChannel dead — recreating DC');
           this._setupDataChannel();
@@ -506,19 +521,33 @@ export class WebRTCTransport {
 
           // ── Single-flight: ONE offer, then wait for answer + connection ──
           this._answerReceived = false;
+          
+          console.log(`\n[ICE_RECOVERY]
+CREATED_OFFER
+sdpType=offer
+iceRestart=true\n`);
           const offer = await this.peerConnection.createOffer({ iceRestart: true });
+          
           await this.peerConnection.setLocalDescription(offer);
+          console.log(`\n[ICE_RECOVERY]\nLOCAL_DESCRIPTION_SET\n`);
+          
           await this.signaling.sendSignal('OFFER', offer);
-          console.log('[RECOVERY] ICE restart offer sent, waiting for answer...');
+          console.log(`\n[ICE_RECOVERY]\nOFFER_SENT\n`);
 
           // Wait up to 15s for connection recovery
           const deadline = Date.now() + 15000;
+          console.log(`\n[ICE_RECOVERY]\nWAITING_FOR_CONNECTED\n`);
+          
           while (Date.now() < deadline) {
             if (this.isTransferCancelled || this.status === 'FAILED') break;
 
             // Full health check
             if (this._isConnectionHealthy()) {
-              console.log(`[RECOVERY] Phase 3 success on attempt ${attempt + 1}`);
+              console.log(`\n[ICE_RECOVERY]
+CONNECTED
+connectionState=${this.peerConnection?.connectionState}
+iceConnectionState=${this.peerConnection?.iceConnectionState}
+dataChannel=${this.dataChannel?.readyState}\n`);
               this._iceHealthy = true;
               if (this.status === 'RECOVERING') this._updateStatus('TRANSFERRING');
               return;
@@ -526,13 +555,18 @@ export class WebRTCTransport {
 
             // PC reconnected but DC is dead → recreate DC now (safe because PC is connected)
             if (this.peerConnection?.connectionState === 'connected' &&
+                ['connected', 'completed'].includes(this.peerConnection?.iceConnectionState) &&
                 (!this.dataChannel || this.dataChannel.readyState === 'closed' || this.dataChannel.readyState === 'closing')) {
               console.log('[RECOVERY] PC reconnected — recreating DataChannel');
               this._setupDataChannel();
               // Wait up to 3s for DC to open
               for (let j = 0; j < 15; j++) {
                 if (this._isConnectionHealthy()) {
-                  console.log('[RECOVERY] DataChannel opened after ICE restart');
+                  console.log(`\n[ICE_RECOVERY]
+CONNECTED
+connectionState=${this.peerConnection?.connectionState}
+iceConnectionState=${this.peerConnection?.iceConnectionState}
+dataChannel=${this.dataChannel?.readyState}\n`);
                   this._iceHealthy = true;
                   if (this.status === 'RECOVERING') this._updateStatus('TRANSFERRING');
                   return;
@@ -561,10 +595,21 @@ export class WebRTCTransport {
       if (!this.isCompleted && !this.isTransferCancelled && this.status !== 'FAILED') {
         // Final check
         if (this._isConnectionHealthy()) {
+          console.log(`\n[ICE_RECOVERY]
+CONNECTED
+connectionState=${this.peerConnection?.connectionState}
+iceConnectionState=${this.peerConnection?.iceConnectionState}
+dataChannel=${this.dataChannel?.readyState}\n`);
           this._iceHealthy = true;
           if (this.status === 'RECOVERING') this._updateStatus('TRANSFERRING');
           return;
         }
+
+        console.log(`\n[ICE_RECOVERY]
+FAILED
+connectionState=${this.peerConnection?.connectionState}
+iceConnectionState=${this.peerConnection?.iceConnectionState}
+signalingState=${this.peerConnection?.signalingState}\n`);
 
         this._logDiagnostics('RECOVERY_FAILED');
         console.error('[RECOVERY] All recovery attempts exhausted.');
@@ -586,6 +631,7 @@ export class WebRTCTransport {
    */
   _isConnectionHealthy() {
     return this.peerConnection?.connectionState === 'connected' &&
+           ['connected', 'completed'].includes(this.peerConnection?.iceConnectionState) &&
            this.dataChannel?.readyState === 'open';
   }
 

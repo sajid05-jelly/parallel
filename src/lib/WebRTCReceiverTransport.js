@@ -162,10 +162,15 @@ export class WebRTCReceiverTransport {
         console.log('[ReceiverTransport] Received ICE candidate from sender');
         if (this.peerConnection && candidate) {
           try {
-            await this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+            if (this.peerConnection.remoteDescription) {
+              await this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+              console.log(`\n[ICE_RECOVERY]\nCANDIDATE_ADDED\n`);
+            } else {
+              console.log(`\n[ICE_RECOVERY]\nCANDIDATE_QUEUED\ncandidate=${candidate.candidate}\n`);
+              this._iceCandidateQueue.push(candidate);
+            }
           } catch (e) {
-            console.warn('[ReceiverTransport] Error adding remote ICE candidate, queueing it:', e.message);
-            this._iceCandidateQueue.push(candidate);
+            console.error('[ReceiverTransport] Error adding remote ICE candidate:', e.message);
           }
         }
       },
@@ -208,8 +213,15 @@ export class WebRTCReceiverTransport {
 
     try {
       this._logDiagnostics('OFFER_RECEIVED');
+      console.log(`\n[ICE_RECOVERY]
+START
+connectionState=${this.peerConnection?.connectionState}
+iceConnectionState=${this.peerConnection?.iceConnectionState}
+signalingState=${sigState}\n`);
+      
       console.log('[ReceiverTransport] Setting Remote Description (Offer), signalingState:', sigState);
       await this.peerConnection.setRemoteDescription(new RTCSessionDescription(offerSdp));
+      console.log(`\n[ICE_RECOVERY]\nREMOTE_DESCRIPTION_SET\n`);
 
       // Process queued ICE candidates now that remote description is set
       const retryQueue = [...this._iceCandidateQueue];
@@ -217,6 +229,7 @@ export class WebRTCReceiverTransport {
       for (const cand of retryQueue) {
         try {
           await this.peerConnection.addIceCandidate(new RTCIceCandidate(cand));
+          console.log(`\n[ICE_RECOVERY]\nCANDIDATE_ADDED\n`);
         } catch (e) {
           console.warn('[ReceiverTransport] Still failed to add queued ICE candidate:', e.message);
           this._iceCandidateQueue.push(cand);
@@ -226,10 +239,12 @@ export class WebRTCReceiverTransport {
       console.log('[ReceiverTransport] Creating Answer SDP');
       const answer = await this.peerConnection.createAnswer();
       await this.peerConnection.setLocalDescription(answer);
+      console.log(`\n[ICE_RECOVERY]\nLOCAL_DESCRIPTION_SET\n`);
 
       console.log('[ReceiverTransport] Sending Answer SDP to sender');
       await this.signaling.sendSignal('ANSWER', answer);
       this._logDiagnostics('ANSWER_SENT');
+      console.log(`\n[ICE_RECOVERY]\nWAITING_FOR_CONNECTED\n`);
     } catch (err) {
       console.error('[ReceiverTransport] Error handling offer:', err);
       this._logDiagnostics('OFFER_ERROR');
@@ -270,6 +285,11 @@ export class WebRTCReceiverTransport {
         if (this.status === 'RECOVERING') {
           // Only transition when DataChannel is also open
           if (this.dataChannel?.readyState === 'open') {
+            console.log(`\n[ICE_RECOVERY]
+CONNECTED
+connectionState=${this.peerConnection?.connectionState}
+iceConnectionState=${this.peerConnection?.iceConnectionState}
+dataChannel=${this.dataChannel?.readyState}\n`);
             this._updateStatus('TRANSFERRING');
           } else {
             console.log('[ReceiverTransport] PC connected during recovery but DC not open yet — waiting for ondatachannel');
@@ -336,6 +356,11 @@ export class WebRTCReceiverTransport {
 
       if (this.status === 'RECOVERING') {
         // Recovery succeeded — resume receiving chunks
+        console.log(`\n[ICE_RECOVERY]
+CONNECTED
+connectionState=${this.peerConnection?.connectionState}
+iceConnectionState=${this.peerConnection?.iceConnectionState}
+dataChannel=${this.dataChannel?.readyState}\n`);
         this._updateStatus('TRANSFERRING');
       } else if (this.status !== 'WAITING' && this.status !== 'TRANSFERRING' && this.status !== 'COMPLETED') {
         this._updateStatus('CONNECTED');
@@ -411,6 +436,11 @@ export class WebRTCReceiverTransport {
       const elapsed = Date.now() - this._recoveryStartTime;
       if (elapsed > 120000) {
         console.error(`[RECOVERY WATCHDOG] Recovery timed out after ${Math.round(elapsed/1000)}s`);
+        console.log(`\n[ICE_RECOVERY]
+FAILED
+connectionState=${this.peerConnection?.connectionState}
+iceConnectionState=${this.peerConnection?.iceConnectionState}
+signalingState=${this.peerConnection?.signalingState}\n`);
         this._stopRecoveryWatchdog();
         this.onError(new Error('Connection to sender lost. Please try again.'));
         this._updateStatus('FAILED');
