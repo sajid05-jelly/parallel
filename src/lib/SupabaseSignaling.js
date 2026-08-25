@@ -82,9 +82,6 @@ export class SupabaseSignaling {
    * Send a signaling message
    */
   async sendSignal(type, payload) {
-    if (!this._connected) {
-      throw new Error(`[Signaling] Cannot send ${type}, WebSocket is not connected`);
-    }
 
     const message = {
       type,
