@@ -27,6 +27,7 @@ export class WebRTCTransport {
     this.isTransferAccepted = false;
     this.isTransferCancelled = false;
     this.isCompleted = false;
+    this._manifestSent = false;
 
     // Negotiated chunk size — determined once DataChannel is open
     this._negotiatedChunkSize = WEBRTC_CHUNK_SIZE;
@@ -46,9 +47,32 @@ export class WebRTCTransport {
     this._lastUpdate = Date.now();
     this._bytesSinceLastUpdate = 0;
 
-    // ICE health tracking — used to pause sending when connection is struggling
+    // Accurate progress tracking across resume
+    this._completedFilesBytes = 0;
+    this._filePlaintextBytesSent = 0;
+
+    // ICE health tracking
     this._iceHealthy = false;
-    this._iceRestartAttempted = false;
+
+    // ── Recovery Mutex ──
+    // Only ONE recovery attempt can ever run at a time.
+    this._reconnectInProgress = false;
+
+    // ── Per-file ACK state ──
+    // Tracks the last chunk the receiver confirmed for the CURRENT file.
+    this._currentFileAck = { fileId: null, lastAckedChunk: -1, ackedBytes: 0 };
+    this._lastAckTime = 0;
+
+    // FILE_COMPLETE signal from receiver
+    this._fileCompleteReceived = false;
+
+    // Wake Lock
+    this._wakeLock = null;
+    this._visibilityHandler = null;
+
+    // ICE candidate queues
+    this._outgoingIceQueue = [];
+    this._iceCandidateQueue = [];
   }
 
   setFiles(fileList) {
@@ -59,8 +83,6 @@ export class WebRTCTransport {
         name: file.name,
         size: file.size,
         type: file.type || 'application/octet-stream',
-        // totalChunks is computed after DataChannel opens with the negotiated chunk size
-        // We store a placeholder; manifest is sent after DataChannel opens
       };
     });
 
@@ -69,14 +91,15 @@ export class WebRTCTransport {
   }
 
   _updateStatus(newStatus) {
-    console.log(`[WebRTCTransport] Status changed: ${this.status} -> ${newStatus}`);
+    console.log(`[WebRTCTransport] Status: ${this.status} -> ${newStatus}`);
     this.status = newStatus;
     this.onStatusChange(newStatus);
   }
 
-  /**
-   * Sender Portal Creation & Signaling Setup
-   */
+  // ═══════════════════════════════════════════════════════════
+  //  PORTAL CREATION & SIGNALING
+  // ═══════════════════════════════════════════════════════════
+
   async createPortal() {
     if (this.files.length === 0) throw new Error('No files selected');
 
@@ -110,17 +133,18 @@ export class WebRTCTransport {
           try {
             await this.peerConnection.setRemoteDescription(new RTCSessionDescription(answerSdp));
             if (this.status === 'WAITING' || this.status === 'CREATING') {
-              console.trace('[DIAG_TRACE_SENDER] _updateStatus(NEGOTIATING)'); 
               this._updateStatus('NEGOTIATING');
             }
 
             // Process queued ICE candidates
-            while (this._iceCandidateQueue.length > 0) {
-              const cand = this._iceCandidateQueue.shift();
+            const retryQueue = [...this._iceCandidateQueue];
+            this._iceCandidateQueue = [];
+            for (const cand of retryQueue) {
               try {
                 await this.peerConnection.addIceCandidate(new RTCIceCandidate(cand));
               } catch (e) {
-                console.warn('[WebRTCTransport] Error adding queued ICE candidate:', e);
+                console.warn('[WebRTCTransport] Still failed to add queued ICE candidate:', e.message);
+                this._iceCandidateQueue.push(cand);
               }
             }
           } catch (e) {
@@ -131,28 +155,25 @@ export class WebRTCTransport {
       onIceCandidate: async (candidate) => {
         console.log('[WebRTCTransport] Received ICE candidate from receiver');
         if (this.peerConnection && candidate) {
-          if (!this.peerConnection.remoteDescription) {
+          try {
+            await this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+          } catch (e) {
+            console.warn('[WebRTCTransport] Error adding remote ICE candidate, queueing it:', e.message);
             this._iceCandidateQueue.push(candidate);
-          } else {
-            try {
-              await this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-            } catch (e) {
-              console.warn('[WebRTCTransport] Error adding remote ICE candidate:', e);
-            }
           }
         }
       },
       onReceiverClaimed: async () => {
         console.log(`\n[PORTAL JOIN REQUEST]
-portalId: ${this.token}
-alreadyConnected: ${this.peerConnection?.connectionState === 'connected'}
-connectionState: ${this.peerConnection?.connectionState || 'none'}
-transferState: ${this.status}\n`);
+  portalId: ${this.token}
+  alreadyConnected: ${this.peerConnection?.connectionState === 'connected'}
+  connectionState: ${this.peerConnection?.connectionState || 'none'}
+  transferState: ${this.status}\n`);
 
         if (this.status === 'TRANSFERRING' || this.status === 'CONNECTED') {
-          console.warn('[WebRTCTransport] ACTIVE_CONNECTION_EXISTS. Ignoring duplicate join request to protect active transfer.');
+          console.warn('[WebRTCTransport] ACTIVE_CONNECTION_EXISTS. Ignoring duplicate join request.');
           await this.signaling.sendSignal('ALREADY_CONNECTED', { message: 'Another device is already receiving.' });
-          return; // Do NOT destroy existing connection. The active receiver must continue.
+          return;
         }
 
         if (this.status === 'COMPLETED') {
@@ -162,23 +183,16 @@ transferState: ${this.status}\n`);
         }
 
         console.log('[WebRTCTransport] Receiver claimed portal. Re-broadcasting WebRTC Offer.');
-        if (this.status === 'RECOVERING') {
-          console.warn('[WebRTCTransport] Receiver re-joined during RECOVERING. Aborting old stream to start fresh.');
-          this._abortOldStream = true;
-          this.progress = { ...this.progress, sentBytes: 0, percentage: 0, currentFile: null, filesSent: 0 };
-        }
-        console.trace('[DIAG_TRACE_SENDER] _updateStatus(NEGOTIATING)'); this._updateStatus('NEGOTIATING');
+        this._updateStatus('NEGOTIATING');
         if (this.peerConnection && this.peerConnection.localDescription) {
           await this.signaling.sendSignal('OFFER', this.peerConnection.localDescription);
         }
       },
       onCancel: () => {
         console.log(`\n[PEER CLOSE]
-reason: receiver cancelled
-portalId: ${this.token}
-transferState: ${this.status}
-pcState: ${this.peerConnection?.connectionState || 'none'}
-dataChannelState: ${this.dataChannel?.readyState || 'none'}\n`);
+  reason: receiver cancelled
+  portalId: ${this.token}
+  transferState: ${this.status}\n`);
         this.cancelPortal();
       }
     });
@@ -193,12 +207,10 @@ dataChannelState: ${this.dataChannel?.readyState || 'none'}\n`);
     // 6. Broadcast Offer SDP via Signaling
     await this.signaling.sendSignal('OFFER', offer);
 
-    console.trace('[DIAG_TRACE_SENDER] _updateStatus(WAITING)'); this._updateStatus('WAITING');
+    this._updateStatus('WAITING');
 
     // Connection timeout — only fire if we never reached a data-flowing state
     this._connectionTimeout = setTimeout(() => {
-      const safeStates = ['CONNECTED', 'WAITING', 'NEGOTIATING', 'TRANSFERRING', 'COMPLETED'];
-      // Only fail if still in initial states with no data channel open
       if (this.status === 'CREATING' || this.status === 'IDLE') {
         console.warn('[WebRTCTransport] Connection timed out — status:', this.status);
         this.onError(new Error('Could not connect. Check your network and try again.'));
@@ -212,6 +224,10 @@ dataChannelState: ${this.dataChannel?.readyState || 'none'}\n`);
 
     return { token: this.token, keyString: this.keyString, sessionId: this.sessionId, url, expiresAt };
   }
+
+  // ═══════════════════════════════════════════════════════════
+  //  PEER CONNECTION SETUP
+  // ═══════════════════════════════════════════════════════════
 
   _setupPeerConnection() {
     const selectedServers = this.mode === 'nearby' ? NEARBY_ICE_SERVERS : ICE_SERVERS;
@@ -229,18 +245,18 @@ dataChannelState: ${this.dataChannel?.readyState || 'none'}\n`);
       }
     };
 
+    // ── SIMPLIFIED CONNECTION STATE HANDLER ──
+    // All recovery goes through the single _attemptRecovery() mutex.
     this.peerConnection.onconnectionstatechange = async () => {
       const state = this.peerConnection?.connectionState;
       const iceState = this.peerConnection?.iceConnectionState;
-      console.log(`[WebRTCTransport] PeerConnection state: ${state}, ICE state: ${iceState}, dataChannel: ${this.dataChannel?.readyState}, buffered: ${this.dataChannel?.bufferedAmount}`);
+      console.log(`[WebRTCTransport] PeerConnection state: ${state}, ICE: ${iceState}, DC: ${this.dataChannel?.readyState}`);
 
       if (state === 'connected') {
         this._iceHealthy = true;
-        this._iceRestartAttempted = false;
         if (this._connectionTimeout) clearTimeout(this._connectionTimeout);
-        if (this._recoveryTimeout) clearTimeout(this._recoveryTimeout);
 
-        // Strict LAN Validation for Nearby Mode: Inspect selected ACTIVE ICE Candidate Pair
+        // Strict LAN Validation for Nearby Mode
         if (this.mode === 'nearby') {
           let isDirectLocal = false;
           try {
@@ -276,86 +292,37 @@ dataChannelState: ${this.dataChannel?.readyState || 'none'}\n`);
           }
         }
 
-        if (this.status === 'RECOVERING' || (this.status !== 'TRANSFERRING' && this.status !== 'COMPLETED')) {
-          if (this.status === 'RECOVERING') {
-            this._updateStatus('TRANSFERRING');
-          } else {
-            this._updateStatus('CONNECTED');
-          }
+        if (this.status === 'RECOVERING') {
+          this._updateStatus('TRANSFERRING');
+        } else if (this.status !== 'TRANSFERRING' && this.status !== 'COMPLETED') {
+          this._updateStatus('CONNECTED');
         }
 
       } else if (state === 'disconnected') {
-        console.log('[DIAG_WEBRTC] ICE connection disconnected (may self-recover)');
         this._iceHealthy = false;
-        if (this.status === 'TRANSFERRING') {
-          console.trace('[DIAG_TRACE_SENDER] _updateStatus(RECOVERING)'); this._updateStatus('RECOVERING');
+        if (this.status === 'TRANSFERRING' || this.status === 'CONNECTED') {
+          this._updateStatus('RECOVERING');
         }
-        
-        // Attempt ICE restart to recover the connection
-        if (!this._iceRestartAttempted && this.peerConnection && this.signaling && !this.isTransferCancelled) {
-          this._iceRestartAttempted = true;
-          this._doIceRestart();
-        }
+        // Single recovery entry point
+        this._attemptRecovery();
 
       } else if (state === 'failed') {
         this._iceHealthy = false;
-        if (this._connectionTimeout) clearTimeout(this._connectionTimeout);
-        if (this.isTransferCancelled) {
-          console.log('[WebRTCTransport] Ignoring ICE failure because transfer was intentionally cancelled.');
-          return;
+        if (this.isTransferCancelled || this.isCompleted) return;
+        if (this.status === 'TRANSFERRING' || this.status === 'CONNECTED') {
+          this._updateStatus('RECOVERING');
         }
-        
-        // Attempt ICE restart if not already tried
-        if (this.peerConnection && this.signaling && !this.isCompleted && this.status === 'RECOVERING') {
-          console.warn('[WebRTCTransport] ICE failed during RECOVERING! Forcing another ICE restart in 3 seconds...');
-          setTimeout(() => {
-            if (this.status === 'RECOVERING' && !this.isTransferCancelled) {
-              this._doIceRestart();
-            }
-          }, 3000);
-        } else if (!this._iceRestartAttempted && this.peerConnection && this.signaling && !this.isCompleted) {
-          this._iceRestartAttempted = true;
-          this._doIceRestart();
-        }
-
-        if (!this.isCompleted && this.status !== 'COMPLETED') {
-          console.error('[WebRTCTransport] PeerConnection failed. ICE state:', iceState);
-          
-          if (this._recoveryTimeout) clearTimeout(this._recoveryTimeout);
-          this._recoveryTimeout = setTimeout(() => {
-            if (this.isTransferCancelled || this.status === 'COMPLETED') return;
-            if (this.peerConnection?.iceConnectionState === 'connected' || this.peerConnection?.iceConnectionState === 'completed') return;
-            
-            // Do not fail if data channel is still open (backpressure, not death)
-            if (this.dataChannel?.readyState === 'open') {
-              console.warn('[WebRTCTransport] Ignoring failed state because DataChannel is open.');
-              // Reset flag so we can try ICE restart again
-              this._iceRestartAttempted = false;
-              return;
-            }
-
-            console.error(`[TRANSFER FATAL ERROR]
-reason: connection recovery failed after grace period
-dataChannelState: ${this.dataChannel?.readyState}
-connectionState: ${this.peerConnection?.connectionState}
-iceState: ${this.peerConnection?.iceConnectionState}
-bufferedAmount: ${this.dataChannel?.bufferedAmount}
-sentBytes: ${this.progress?.sentBytes}
-progress: ${this.progress?.percentage}`);
-
-            if (this.mode === 'nearby') {
-              this.onError(new Error('Nearby Transfer: WebRTC connection failed. Ensure both devices are on the same Wi-Fi.'));
-            } else {
-              this.onError(new Error('WebRTC connection failed. This can happen on restrictive networks. Try the other transfer mode.'));
-            }
-            this._updateStatus('FAILED');
-          }, 45000);
-        }
+        // Single recovery entry point
+        this._attemptRecovery();
       }
     };
 
     this._setupDataChannel();
   }
+
+  // ═══════════════════════════════════════════════════════════
+  //  DATA CHANNEL SETUP
+  // ═══════════════════════════════════════════════════════════
 
   _setupDataChannel() {
     if (this.dataChannel) {
@@ -367,23 +334,26 @@ progress: ${this.progress?.percentage}`);
     this.dataChannel.binaryType = 'arraybuffer';
 
     this.dataChannel.onopen = () => {
-      console.log('[WebRTCTransport] RTCDataChannel opened successfully');
+      console.log('[WebRTCTransport] DataChannel opened');
       this._iceHealthy = true;
-      this._negotiatedChunkSize = 65536; 
-      console.log(`[WebRTCTransport] Negotiated chunk size: ${this._negotiatedChunkSize} bytes`);
+      this._negotiatedChunkSize = 65536;
 
       this.files = this.files.map(f => ({
         ...f,
         totalChunks: Math.ceil(f.size / this._negotiatedChunkSize)
       }));
 
-      // If we are recovering from a drop, just send a ping and wait to resume
       if (this.status === 'RECOVERING') {
+        // Recovery succeeded — send loop is paused and will auto-resume
+        // because _waitForChannelReady() polls for DC open + iceHealthy
         this._updateStatus('TRANSFERRING');
-      } else {
+      } else if (!this._manifestSent) {
+        // First connection — send manifest
         this._updateStatus('CONNECTED');
         this._sendManifest();
+        this._manifestSent = true;
       }
+
       this._startHeartbeat();
     };
 
@@ -392,27 +362,28 @@ progress: ${this.progress?.percentage}`);
     };
 
     this.dataChannel.onerror = (err) => {
-      console.error('[WebRTCTransport] DataChannel error:', JSON.stringify(err), err);
+      console.error('[WebRTCTransport] DataChannel error:', err);
     };
 
     this.dataChannel.onclose = () => {
       console.log('[WebRTCTransport] DataChannel closed. isCompleted:', this.isCompleted, 'status:', this.status);
       this._stopHeartbeat();
-      if (this.isTransferCancelled) {
-        console.log('[WebRTCTransport] Ignoring DataChannel close because transfer was cancelled.');
-        return;
-      }
-      if (!this.isCompleted && this.status === 'TRANSFERRING') {
-        console.warn('[WebRTCTransport] DataChannel closed unexpectedly! Waiting for ICE recovery...');
-        console.trace('[DIAG_TRACE_SENDER] _updateStatus(RECOVERING)'); this._updateStatus('RECOVERING');
+      if (this.isTransferCancelled) return;
+      if (!this.isCompleted && (this.status === 'TRANSFERRING' || this.status === 'CONNECTED')) {
+        this._iceHealthy = false;
+        this._updateStatus('RECOVERING');
+        this._attemptRecovery();
       }
     };
   }
 
+  // ═══════════════════════════════════════════════════════════
+  //  ICE CANDIDATE QUEUE (for offline signaling)
+  // ═══════════════════════════════════════════════════════════
+
   async _flushOutgoingIceQueue() {
     if (!this.signaling || this._outgoingIceQueue.length === 0) return;
     
-    // Process queue
     const remainingQueue = [];
     for (const candidate of this._outgoingIceQueue) {
       try {
@@ -431,30 +402,138 @@ progress: ${this.progress?.percentage}`);
     }
   }
 
-  async _doIceRestart() {
-    let attempts = 0;
-    while (this.status === 'RECOVERING' && attempts < 5 && !this.isTransferCancelled) {
-      try {
-        console.log(`[WebRTCTransport] Attempting ICE restart (attempt ${attempts + 1})...`);
-        if (this.dataChannel && this.dataChannel.readyState === 'closed') {
-          console.log('[WebRTCTransport] Recreating DataChannel for ICE restart...');
-          this._setupDataChannel();
+  // ═══════════════════════════════════════════════════════════
+  //  SINGLE RECOVERY PATH (MUTEX-PROTECTED)
+  //  Replaces all previous _doIceRestart / scattered setTimeout calls
+  // ═══════════════════════════════════════════════════════════
+
+  async _attemptRecovery() {
+    // ── Mutex: Only ONE recovery can run at a time ──
+    if (this._reconnectInProgress) {
+      console.log('[RECOVERY] Already in progress — skipping duplicate call');
+      return;
+    }
+    if (this.isTransferCancelled || this.isCompleted || this.status === 'COMPLETED' || this.status === 'FAILED') {
+      return;
+    }
+
+    this._reconnectInProgress = true;
+    console.log('[RECOVERY] Starting controlled recovery...');
+
+    try {
+      let delay = 1000; // Start at 1s, exponential backoff up to 8s
+      const MAX_ATTEMPTS = 12;
+
+      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+        if (this.isTransferCancelled || this.isCompleted || this.status === 'FAILED') break;
+
+        // Check if already recovered
+        if (this.peerConnection?.connectionState === 'connected' && this.dataChannel?.readyState === 'open') {
+          console.log(`[RECOVERY] Connection recovered after ${attempt} attempts`);
+          this._iceHealthy = true;
+          if (this.status === 'RECOVERING') this._updateStatus('TRANSFERRING');
+          return;
         }
-        if (this.peerConnection.signalingState !== 'closed') {
-          this.peerConnection.restartIce();
-          const offer = await this.peerConnection.createOffer({ iceRestart: true });
-          await this.peerConnection.setLocalDescription(offer);
-          await this.signaling.sendSignal('OFFER', offer);
-          console.log('[WebRTCTransport] ICE restart offer sent.');
-          break; // Success
+
+        console.log(`[RECOVERY] Attempt ${attempt + 1}/${MAX_ATTEMPTS} (backoff: ${delay}ms)`);
+
+        try {
+          // Recreate DataChannel if it's closed/closing
+          if (!this.dataChannel || this.dataChannel.readyState === 'closed' || this.dataChannel.readyState === 'closing') {
+            console.log('[RECOVERY] Recreating DataChannel');
+            this._setupDataChannel();
+          }
+
+          // ICE restart on existing PeerConnection
+          if (this.peerConnection && this.peerConnection.signalingState !== 'closed') {
+            this.peerConnection.restartIce();
+            await Promise.race([
+              (async () => {
+                const offer = await this.peerConnection.createOffer({ iceRestart: true });
+                await this.peerConnection.setLocalDescription(offer);
+                await this.signaling.sendSignal('OFFER', offer);
+              })(),
+              new Promise((_, reject) => setTimeout(() => reject(new Error('Signaling timeout')), 8000))
+            ]);
+            console.log('[RECOVERY] ICE restart offer sent');
+          }
+        } catch (e) {
+          console.warn(`[RECOVERY] Attempt ${attempt + 1} error:`, e.message);
         }
-      } catch (e) {
-        console.warn(`[WebRTCTransport] ICE restart attempt ${attempts + 1} failed:`, e);
-        attempts++;
-        await new Promise(r => setTimeout(r, 3000));
+
+        // Wait with exponential backoff
+        await new Promise(r => setTimeout(r, delay));
+        delay = Math.min(delay * 2, 8000);
+
+        // Check after wait
+        if (this.peerConnection?.connectionState === 'connected' && this.dataChannel?.readyState === 'open') {
+          console.log(`[RECOVERY] Connection recovered after attempt ${attempt + 1}`);
+          this._iceHealthy = true;
+          if (this.status === 'RECOVERING') this._updateStatus('TRANSFERRING');
+          return;
+        }
       }
+
+      // All recovery attempts exhausted
+      if (!this.isCompleted && !this.isTransferCancelled && this.status !== 'FAILED') {
+        // Last chance: check if DataChannel is still open (backpressure, not death)
+        if (this.dataChannel?.readyState === 'open') {
+          console.warn('[RECOVERY] PeerConnection shows failed but DataChannel is open — not declaring failure');
+          this._iceHealthy = true;
+          if (this.status === 'RECOVERING') this._updateStatus('TRANSFERRING');
+          return;
+        }
+
+        console.error('[RECOVERY] All recovery attempts exhausted. Declaring failure.');
+        if (this.mode === 'nearby') {
+          this.onError(new Error('Nearby Transfer: connection lost. Ensure both devices are on the same Wi-Fi.'));
+        } else {
+          this.onError(new Error('Connection lost. Recovery failed after multiple attempts. Try again.'));
+        }
+        this._updateStatus('FAILED');
+      }
+
+    } finally {
+      this._reconnectInProgress = false;
     }
   }
+
+  /**
+   * Wait for DataChannel to be open AND ICE to be healthy.
+   * The send loop calls this to pause/resume automatically.
+   */
+  async _waitForChannelReady(timeoutMs = 90000) {
+    if (this.dataChannel?.readyState === 'open' && this._iceHealthy) return;
+
+    console.log('[TRANSFER] Waiting for channel recovery...');
+    const start = Date.now();
+
+    while (true) {
+      if (this.isTransferCancelled || this.status === 'FAILED' || this.status === 'CANCELLED') {
+        throw new Error('Transfer cancelled or failed during recovery wait');
+      }
+      if (this.dataChannel?.readyState === 'open' && this._iceHealthy) {
+        console.log(`[TRANSFER] Channel ready after ${Date.now() - start}ms`);
+        return;
+      }
+
+      // During RECOVERING, extend the timeout — recovery is actively happening
+      if (this.status === 'RECOVERING') {
+        // Don't timeout while recovery is actively running
+        await new Promise(r => setTimeout(r, 300));
+        continue;
+      }
+
+      if (Date.now() - start > timeoutMs) {
+        throw new Error('Connection recovery timed out');
+      }
+      await new Promise(r => setTimeout(r, 300));
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  HEARTBEAT
+  // ═══════════════════════════════════════════════════════════
 
   _startHeartbeat() {
     this._stopHeartbeat();
@@ -474,10 +553,47 @@ progress: ${this.progress?.percentage}`);
     }
   }
 
-  /**
-   * Send JSON Manifest over DataChannel to receiver
-   * NOTE: Called AFTER DataChannel opens so totalChunks uses the negotiated chunk size
-   */
+  // ═══════════════════════════════════════════════════════════
+  //  TRANSFER WATCHDOG
+  //  Monitors actual ACK progress. If no ACKs arrive for 30s
+  //  AND DataChannel is dead, triggers recovery.
+  //  Does NOT trigger on speed=0 alone (backpressure is normal).
+  // ═══════════════════════════════════════════════════════════
+
+  _startWatchdog() {
+    this._stopWatchdog();
+    this._watchdogInterval = setInterval(() => {
+      if (this.status !== 'TRANSFERRING' && this.status !== 'RECOVERING') return;
+      if (this.isCompleted || this.isTransferCancelled) {
+        this._stopWatchdog();
+        return;
+      }
+
+      const timeSinceLastAck = Date.now() - this._lastAckTime;
+
+      // If we haven't received any ACK in 30 seconds and the DataChannel is dead
+      if (timeSinceLastAck > 30000 && this.dataChannel?.readyState !== 'open') {
+        console.warn(`[WATCHDOG] No ACK for ${Math.round(timeSinceLastAck/1000)}s and DataChannel is ${this.dataChannel?.readyState}. Triggering recovery.`);
+        if (this.status !== 'RECOVERING') {
+          this._iceHealthy = false;
+          this._updateStatus('RECOVERING');
+        }
+        this._attemptRecovery();
+      }
+    }, 10000);
+  }
+
+  _stopWatchdog() {
+    if (this._watchdogInterval) {
+      clearInterval(this._watchdogInterval);
+      this._watchdogInterval = null;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  MANIFEST
+  // ═══════════════════════════════════════════════════════════
+
   _sendManifest() {
     const manifest = {
       transferId: this.sessionId,
@@ -488,7 +604,7 @@ progress: ${this.progress?.percentage}`);
         name: f.name,
         size: f.size,
         type: f.type,
-        totalChunks: f.totalChunks  // Uses negotiated chunk size — matches what we actually send
+        totalChunks: f.totalChunks
       }))
     };
 
@@ -496,167 +612,316 @@ progress: ${this.progress?.percentage}`);
     this.dataChannel.send(encodeControlMessage(MESSAGE_TYPES.MANIFEST, manifest));
   }
 
-  /**
-   * Handle incoming DataChannel messages from receiver
-   */
+  // ═══════════════════════════════════════════════════════════
+  //  INCOMING MESSAGE HANDLER
+  // ═══════════════════════════════════════════════════════════
+
   _handleDataChannelMessage(data) {
     const msg = decodeMessage(data);
     if (!msg.isControl) return;
 
     if (msg.type === MESSAGE_TYPES.TRANSFER_ACCEPTED) {
-      console.log('[WebRTCTransport] Receiver accepted transfer. Starting chunk stream...');
-      this.isTransferAccepted = true;
-      this._updateStatus('TRANSFERRING');
-      this._startFileStream();
+      // Guard: only start file stream once
+      if (!this.isTransferAccepted) {
+        console.log('[WebRTCTransport] Receiver accepted transfer. Starting chunk stream...');
+        this.isTransferAccepted = true;
+        this._updateStatus('TRANSFERRING');
+        this._acquireWakeLock();
+        this._startWatchdog();
+        this._startFileStream();
+      }
+
     } else if (msg.type === MESSAGE_TYPES.TRANSFER_COMPLETE_ACK) {
-      // FIX: Only mark COMPLETED when receiver confirms — do not complete early
-      console.log('[WebRTCTransport] Received TRANSFER_COMPLETE_ACK from receiver. Transfer confirmed complete.');
+      console.log('[WebRTCTransport] TRANSFER_COMPLETE_ACK received. Transfer confirmed complete.');
       this.isCompleted = true;
       if (this._connectionTimeout) clearTimeout(this._connectionTimeout);
+      this._stopWatchdog();
+      this._releaseWakeLock();
       this._updateStatus('COMPLETED');
-      // Update session in DB
       updateSession(this.sessionId, { status: 'COMPLETED' }).catch(e =>
         console.warn('[WebRTCTransport] Session update to COMPLETED failed (non-critical):', e)
       );
       this.onComplete({ token: this.token, keyString: this.keyString, sessionId: this.sessionId });
+
     } else if (msg.type === MESSAGE_TYPES.CANCEL) {
       if (!this.isCompleted && this.status !== 'COMPLETED') {
         console.log('[WebRTCTransport] Receiver requested transfer cancellation');
         this.cancelPortal();
       }
+
     } else if (msg.type === MESSAGE_TYPES.PING) {
       if (this.dataChannel?.readyState === 'open') {
         this.dataChannel.send(encodeControlMessage(MESSAGE_TYPES.PONG));
       }
+
     } else if (msg.type === MESSAGE_TYPES.PONG) {
-      // heartbeat acknowledged
       this._lastPong = Date.now();
+
     } else if (msg.type === MESSAGE_TYPES.ACK) {
-      this._lastAckBytes = msg.payload?.receivedBytes || 0;
-      this._lastAckChunkIndex = msg.payload?.chunkIndex || 0;
-      this._lastAckTime = Date.now();
-    } else if (msg.type === MESSAGE_TYPES.FILE_COMPLETE) {
-      if (this._fileCompleteTimeout) clearTimeout(this._fileCompleteTimeout);
-      if (this._currentFileCompleteResolve) {
-        this._currentFileCompleteResolve();
-        this._currentFileCompleteResolve = null;
+      // ── Per-file ACK handling ──
+      // Only update if ACK belongs to the current file
+      const ackFileId = msg.payload?.fileId;
+      const ackChunkIndex = msg.payload?.chunkIndex || 0;
+      const ackReceivedBytes = msg.payload?.receivedBytes || 0;
+
+      if (ackFileId && ackFileId === this._currentFileAck.fileId) {
+        this._currentFileAck.lastAckedChunk = Math.max(this._currentFileAck.lastAckedChunk, ackChunkIndex);
+        this._currentFileAck.ackedBytes = Math.max(this._currentFileAck.ackedBytes, ackReceivedBytes);
       }
+      this._lastAckTime = Date.now();
+
+    } else if (msg.type === MESSAGE_TYPES.FILE_COMPLETE) {
+      console.log('[WebRTCTransport] FILE_COMPLETE received');
+      this._fileCompleteReceived = true;
     }
   }
 
-  /**
-   * Stream files sequentially over DataChannel with backpressure control
-   */
+  // ═══════════════════════════════════════════════════════════
+  //  FILE STREAM — RESILIENT OUTER LOOP
+  //  This function NEVER exits due to a temporary disconnect.
+  //  The inner _sendFileInChunks() pauses and auto-resumes.
+  // ═══════════════════════════════════════════════════════════
+
   async _startFileStream() {
     try {
-      this._abortOldStream = false;
       this._lastUpdate = Date.now();
       this._bytesSinceLastUpdate = 0;
+      this._completedFilesBytes = 0;
 
       for (let i = 0; i < this.files.length; i++) {
-        if (this.isTransferCancelled) break;
+        if (this.isTransferCancelled || this.status === 'FAILED') break;
+
         const fileInfo = this.files[i];
         this.progress.currentFile = fileInfo;
 
-        console.log(`[WebRTCTransport] Starting file ${i + 1}/${this.files.length}: ${fileInfo.name} (${fileInfo.size} bytes, ${fileInfo.totalChunks} chunks)`);
+        // Reset per-file ACK state
+        this._currentFileAck = { fileId: fileInfo.id, lastAckedChunk: -1, ackedBytes: 0 };
+        this._filePlaintextBytesSent = 0;
+        this._fileCompleteReceived = false;
 
-        // Signal FILE_START
+        console.log(`[TRANSFER] Starting file ${i + 1}/${this.files.length}: ${fileInfo.name} (${fileInfo.size} bytes, ${fileInfo.totalChunks} chunks)`);
+
+        // Ensure channel is ready before sending FILE_START
+        await this._waitForChannelReady();
         this.dataChannel.send(encodeControlMessage(MESSAGE_TYPES.FILE_START, { fileId: fileInfo.id }));
 
-        let fileFinished = false;
-        let attempts = 0;
-        
-        while (!fileFinished && attempts < 10) {
-          try {
-            const startChunk = this._lastAckChunkIndex || 0;
-            await this._sendFileInChunks(fileInfo, startChunk);
-            fileFinished = true; // Loop completed without throwing
-          } catch (e) {
-            console.warn(`[WebRTCTransport] File stream interrupted: ${e.message}. Attempting to resume...`);
-            attempts++;
-            if (this.isTransferCancelled || this.status === 'FAILED' || this._abortOldStream) break;
-            // Wait for ICE / DataChannel to recover before retrying
-            let waitMs = 0;
-            while ((!this._iceHealthy || !this.dataChannel || this.dataChannel.readyState !== 'open') && !this.isTransferCancelled && this.status !== 'FAILED' && !this._abortOldStream) {
-              await new Promise(r => setTimeout(r, 1000));
-              waitMs += 1000;
-              if (waitMs > 60000) {
-                throw new Error('Timeout waiting for connection to recover during retry');
-              }
-            }
-            if (this.isTransferCancelled || this.status === 'FAILED' || this._abortOldStream) break;
+        // Send all chunks — loop pauses and resumes automatically on disconnect
+        await this._sendFileInChunks(fileInfo);
 
-            // Recreate DataChannel if it closed
-            if (this.dataChannel && this.dataChannel.readyState !== 'open') {
-              console.log('[WebRTCTransport] DataChannel is not open during retry. Recreating...');
-              this._setupDataChannel();
-              
-              // Wait for it to open
-              let waitOpenMs = 0;
-              while (this.dataChannel && this.dataChannel.readyState !== 'open' && !this.isTransferCancelled && this.status !== 'FAILED') {
-                await new Promise(r => setTimeout(r, 500));
-                waitOpenMs += 500;
-                if (waitOpenMs > 30000) throw new Error('Timeout waiting for recreated DataChannel to open');
-              }
-            }
-
-            console.log(`[WebRTCTransport] Connection recovered, resuming ${fileInfo.name}...`);
-          }
-        }
-        
-        if (!fileFinished) {
-          throw new Error('Failed to send file completely after multiple recovery attempts');
-        }
-
+        // Ensure channel is ready before sending FILE_END
+        await this._waitForChannelReady();
         this.dataChannel.send(encodeControlMessage(MESSAGE_TYPES.FILE_END, { fileId: fileInfo.id }));
-        
-        // Wait for receiver to confirm file is fully assembled and verified
-        console.log(`[WebRTCTransport] Waiting for FILE_COMPLETE for ${fileInfo.id}...`);
+
+        // Wait for receiver to verify and confirm file assembly
         await this._waitForFileComplete(fileInfo.id);
 
+        this._completedFilesBytes += fileInfo.size;
         this.progress.filesSent++;
-        console.log(`[WebRTCTransport] File ${i + 1} finished: ${fileInfo.name}`);
-        this._lastAckChunkIndex = 0; // Reset for next file
+        console.log(`[TRANSFER] File ${i + 1} complete: ${fileInfo.name}`);
       }
 
       if (!this.isTransferCancelled && this.status !== 'FAILED') {
-        // Wait for final buffer drain before finishing transfer
+        // Final buffer drain
         await this._flushBuffer();
-        
-        console.log('[WebRTCTransport] All files sent and verified. Sending TRANSFER_COMPLETE...');
-        this.dataChannel.send(encodeControlMessage(MESSAGE_TYPES.TRANSFER_COMPLETE));
 
-        // Wait for TRANSFER_COMPLETE_ACK
-        console.log('[WebRTCTransport] Waiting for TRANSFER_COMPLETE_ACK from receiver...');
+        // Send TRANSFER_COMPLETE (retried if needed)
+        await this._waitForChannelReady();
+        console.log('[TRANSFER] All files sent and verified. Sending TRANSFER_COMPLETE...');
+        this.dataChannel.send(encodeControlMessage(MESSAGE_TYPES.TRANSFER_COMPLETE));
+        // Completion is handled by TRANSFER_COMPLETE_ACK in _handleDataChannelMessage
       }
 
     } catch (err) {
-      console.error('[WebRTCTransport] File stream error:', err.message, err.stack);
-      if (!this.isCompleted && !this._abortOldStream) {
+      console.error('[WebRTCTransport] File stream error:', err.message);
+      if (!this.isCompleted && !this.isTransferCancelled) {
         this.onError(new Error(`File transfer failed: ${err.message}`));
         this._updateStatus('FAILED');
-      } else if (this._abortOldStream) {
-        console.log('[WebRTCTransport] Stream was aborted cleanly for a receiver rejoin.');
+        this._stopWatchdog();
+        this._releaseWakeLock();
       }
     }
   }
 
-  _waitForFileComplete(fileId) {
-    return new Promise((resolve, reject) => {
-      this._currentFileCompleteResolve = resolve;
-      
-      // Safety timeout in case receiver silently drops
-      this._fileCompleteTimeout = setTimeout(() => {
-        if (!this.isTransferCancelled) {
-          reject(new Error('Timeout waiting for receiver to verify file.'));
+  // ═══════════════════════════════════════════════════════════
+  //  CHUNK SENDER — PAUSE/RESUME ON DISCONNECT
+  //  Uses a while loop so the chunk index can be reset to
+  //  the last ACK'd position after a recovery.
+  // ═══════════════════════════════════════════════════════════
+
+  async _sendFileInChunks(fileInfo) {
+    const file = fileInfo.raw;
+    const chunkSize = this._negotiatedChunkSize;
+    const totalChunks = fileInfo.totalChunks;
+
+    const DYNAMIC_HIGH_WATER_MARK = 4 * 1024 * 1024;
+    const DYNAMIC_LOW_WATER_MARK = 1024 * 1024;
+
+    if (this.dataChannel) {
+      this.dataChannel.bufferedAmountLowThreshold = DYNAMIC_LOW_WATER_MARK;
+    }
+
+    let chunkIndex = 0;
+
+    while (chunkIndex < totalChunks) {
+      if (this.isTransferCancelled || this.status === 'FAILED') {
+        throw new Error('Transfer cancelled or failed');
+      }
+
+      // ── PAUSE when channel is not ready ──
+      // This is the core resilience mechanism. Instead of throwing and dying,
+      // the loop waits here until the channel recovers.
+      if (!this._iceHealthy || !this.dataChannel || this.dataChannel.readyState !== 'open') {
+        console.log(`[TRANSFER] Send paused at chunk ${chunkIndex}/${totalChunks} for ${fileInfo.name}`);
+
+        await this._waitForChannelReady();
+
+        // After recovery, resume from last ACK'd chunk + 1
+        const resumeFrom = Math.max(0, this._currentFileAck.lastAckedChunk + 1);
+        if (resumeFrom > 0 && resumeFrom !== chunkIndex) {
+          console.log(`[TRANSFER] Resuming ${fileInfo.name} from chunk ${resumeFrom} (was at ${chunkIndex})`);
+          chunkIndex = resumeFrom;
+          // Recalculate bytes sent for this file to match ACK'd position
+          this._filePlaintextBytesSent = Math.min(file.size, resumeFrom * chunkSize);
+          this.progress.sentBytes = Math.max(this.progress.sentBytes || 0, this._completedFilesBytes + this._filePlaintextBytesSent);
+          // Reset speed tracking
+          this._lastUpdate = Date.now();
+          this._bytesSinceLastUpdate = 0;
+          this._speedHistory = [];
+          this._lastActualSentBytes = this.progress.sentBytes;
         }
-      }, 60000);
-    });
+
+        // Re-set backpressure threshold on the (possibly new) DataChannel
+        if (this.dataChannel) {
+          this.dataChannel.bufferedAmountLowThreshold = DYNAMIC_LOW_WATER_MARK;
+        }
+        continue; // Re-check at top of loop
+      }
+
+      // ── Backpressure: wait if SCTP buffer is building up ──
+      if (this.dataChannel.bufferedAmount > DYNAMIC_HIGH_WATER_MARK) {
+        await this._waitForBufferDrain(DYNAMIC_LOW_WATER_MARK);
+      }
+
+      // ── Flow control: don't get too far ahead of receiver ACKs ──
+      const MAX_IN_FLIGHT = 8 * 1024 * 1024;
+      while ((this._filePlaintextBytesSent - this._currentFileAck.ackedBytes) > MAX_IN_FLIGHT) {
+        if (this.isTransferCancelled || this.status === 'FAILED') throw new Error('Transfer cancelled');
+        if (!this._iceHealthy || !this.dataChannel || this.dataChannel.readyState !== 'open') break; // Let pause check handle it
+        this._updateProgressStats();
+        await new Promise(r => setTimeout(r, 50));
+      }
+
+      // Re-check channel after flow control wait
+      if (!this.dataChannel || this.dataChannel.readyState !== 'open') continue;
+
+      // ── Read and encrypt chunk ──
+      const start = chunkIndex * chunkSize;
+      const end = Math.min(file.size, start + chunkSize);
+      const chunkPlaintextSize = end - start;
+
+      const blobSlice = file.slice(start, end);
+      const rawArrayBuffer = await blobSlice.arrayBuffer();
+      const encryptedChunkPayload = await encryptChunk(this.encryptionKey, rawArrayBuffer);
+
+      const packet = encodeBinaryChunk({
+        fileId: fileInfo.id,
+        chunkIndex,
+        totalChunks,
+        payloadBuffer: encryptedChunkPayload
+      });
+
+      // ── Send with retry ──
+      let sent = false;
+      let sendAttempts = 0;
+      while (!sent && sendAttempts < 3) {
+        if (this.isTransferCancelled || this.status === 'FAILED') throw new Error('Transfer cancelled');
+        if (!this.dataChannel || this.dataChannel.readyState !== 'open') break; // Let pause check handle it
+        try {
+          this.dataChannel.send(packet);
+          sent = true;
+        } catch (e) {
+          sendAttempts++;
+          if (e.name === 'TypeError' || e.name === 'OperationError' || (e.message && e.message.toLowerCase().includes('buffer'))) {
+            console.warn(`[TRANSFER] Send buffer error on chunk ${chunkIndex}, backing off...`);
+            await new Promise(r => setTimeout(r, 100));
+            if (this.dataChannel?.bufferedAmount > DYNAMIC_HIGH_WATER_MARK) {
+              await this._waitForBufferDrain(DYNAMIC_LOW_WATER_MARK);
+            }
+          } else {
+            // Channel probably closed — will be caught by pause check
+            break;
+          }
+        }
+      }
+
+      if (!sent) {
+        // Failed to send — don't advance chunkIndex, let pause check handle recovery
+        continue;
+      }
+
+      this._filePlaintextBytesSent += chunkPlaintextSize;
+      this.progress.sentBytes = this._completedFilesBytes + this._filePlaintextBytesSent;
+      this._bytesSinceLastUpdate += chunkPlaintextSize;
+
+      this._updateProgressStats();
+
+      // Yield to browser event loop every 5 chunks so ICE keepalives get processed
+      if (chunkIndex % 5 === 0) {
+        await new Promise(r => setTimeout(r, 0));
+      }
+
+      chunkIndex++;
+    }
   }
 
-  /**
-   * Wait for DataChannel buffer to fully drain before proceeding
-   */
+  // ═══════════════════════════════════════════════════════════
+  //  WAIT FOR FILE COMPLETE (receiver verification)
+  //  Resilient to disconnects — pauses timeout during recovery.
+  //  Re-sends FILE_END periodically in case it was lost.
+  // ═══════════════════════════════════════════════════════════
+
+  async _waitForFileComplete(fileId) {
+    let lastFileSendEndTime = Date.now();
+    const TIMEOUT = 120000; // 2 minutes total (excluding recovery time)
+    let activeWaitTime = 0;
+
+    while (true) {
+      if (this.isTransferCancelled || this.status === 'FAILED') {
+        throw new Error('Transfer cancelled while waiting for file verification');
+      }
+
+      if (this._fileCompleteReceived) {
+        this._fileCompleteReceived = false;
+        return;
+      }
+
+      // During RECOVERING, don't count toward timeout
+      if (this.status === 'RECOVERING') {
+        await new Promise(r => setTimeout(r, 500));
+        continue;
+      }
+
+      // Re-send FILE_END every 5s in case it was lost during recovery
+      if (this.dataChannel?.readyState === 'open' && Date.now() - lastFileSendEndTime > 5000) {
+        try {
+          this.dataChannel.send(encodeControlMessage(MESSAGE_TYPES.FILE_END, { fileId }));
+          lastFileSendEndTime = Date.now();
+        } catch (e) { /* channel might have just closed */ }
+      }
+
+      await new Promise(r => setTimeout(r, 200));
+      activeWaitTime += 200;
+
+      if (activeWaitTime > TIMEOUT) {
+        throw new Error('Timeout waiting for receiver to verify file.');
+      }
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  BUFFER MANAGEMENT
+  // ═══════════════════════════════════════════════════════════
+
   _flushBuffer() {
     return new Promise((resolve) => {
       if (!this.dataChannel || this.dataChannel.bufferedAmount === 0) {
@@ -674,137 +939,21 @@ progress: ${this.progress?.percentage}`);
     });
   }
 
-  /**
-   * Chunking + Client-side AES-GCM Encryption + Backpressure Control
-   * IMPORTANT: Uses this._negotiatedChunkSize (set when DataChannel opens)
-   * which MATCHES the totalChunks in the manifest.
-   */
-  async _sendFileInChunks(fileInfo, startChunkIndex = 0) {
-    const file = fileInfo.raw;
-    const chunkSize = this._negotiatedChunkSize;
-    const totalChunks = fileInfo.totalChunks;
-
-    const DYNAMIC_HIGH_WATER_MARK = 4 * 1024 * 1024;
-    const DYNAMIC_LOW_WATER_MARK = 1024 * 1024;
-
-    this.dataChannel.bufferedAmountLowThreshold = DYNAMIC_LOW_WATER_MARK;
-    this._lastAckBytes = startChunkIndex * chunkSize; // Start from where we left off
-    this._filePlaintextBytesSent = startChunkIndex * chunkSize;
-
-    if (startChunkIndex > 0) {
-      console.log(`[WebRTCTransport] Resuming ${fileInfo.name} from chunk ${startChunkIndex}/${totalChunks}`);
-    }
-
-    for (let chunkIndex = startChunkIndex; chunkIndex < totalChunks; chunkIndex++) {
-      if (this.isTransferCancelled || this.status === 'FAILED' || this._abortOldStream) throw new Error('Transfer cancelled or failed');
-
-      // 1. PAUSE when ICE connection is unhealthy (disconnected/failed)
-      // This is critical: continuing to push data when the network is struggling
-      // prevents ICE keepalives from getting through and guarantees failure
-      if (!this._iceHealthy) {
-        console.log(`[WebRTCTransport] ICE unhealthy at chunk ${chunkIndex}/${totalChunks} — pausing send loop...`);
-        let waitMs = 0;
-        while (!this._iceHealthy && !this.isTransferCancelled && this.status !== 'FAILED' && !this._abortOldStream) {
-          await new Promise(r => setTimeout(r, 200));
-          waitMs += 200;
-          if (waitMs > 45000) {
-            console.error('[WebRTCTransport] ICE did not recover within 45s during send loop.');
-            break;
-          }
-        }
-        if (!this._iceHealthy || this._abortOldStream) throw new Error('ICE connection lost during transfer');
-        console.log(`[WebRTCTransport] ICE recovered after ${waitMs}ms — resuming send.`);
-      }
-
-      // 2. Check DataChannel is still alive
-      if (!this.dataChannel || this.dataChannel.readyState !== 'open') {
-        console.error('[WebRTCTransport] DataChannel not open at chunk', chunkIndex);
-        throw new Error('DataChannel closed during transfer');
-      }
-
-      // 3. WebRTC DataChannel backpressure — wait if SCTP buffer is building up
-      if (this.dataChannel.bufferedAmount > DYNAMIC_HIGH_WATER_MARK) {
-        await this._waitForBufferDrain(DYNAMIC_LOW_WATER_MARK);
-      }
-
-      // 4. Application-level Flow Control (2MB window)
-      const MAX_IN_FLIGHT = 8 * 1024 * 1024;
-      while ((this._filePlaintextBytesSent - this._lastAckBytes) > MAX_IN_FLIGHT) {
-        if (this.isTransferCancelled || this.status === 'FAILED' || this._abortOldStream) throw new Error('Transfer cancelled or failed');
-        this._updateProgressStats();
-        await new Promise(r => setTimeout(r, 50));
-      }
-
-      // 5. Read and encrypt chunk
-      const start = chunkIndex * chunkSize;
-      const end = Math.min(file.size, start + chunkSize);
-      const chunkPlaintextSize = end - start;
-
-      const blobSlice = file.slice(start, end);
-      const rawArrayBuffer = await blobSlice.arrayBuffer();
-      const encryptedChunkPayload = await encryptChunk(this.encryptionKey, rawArrayBuffer);
-
-      const packet = encodeBinaryChunk({
-        fileId: fileInfo.id,
-        chunkIndex,
-        totalChunks,
-        payloadBuffer: encryptedChunkPayload
-      });
-
-      // 6. Send with retry
-      let sent = false;
-      while (!sent) {
-        if (this.isTransferCancelled || this.status === 'FAILED' || this._abortOldStream) throw new Error('Transfer cancelled or failed');
-        if (!this.dataChannel || this.dataChannel.readyState !== 'open') throw new Error('DataChannel closed during send');
-        try {
-          this.dataChannel.send(packet);
-          sent = true;
-        } catch (e) {
-          if (e.name === 'TypeError' || e.name === 'OperationError' || (e.message && e.message.toLowerCase().includes('buffer'))) {
-            console.warn(`[WebRTCTransport] Send error on chunk ${chunkIndex}, backing off...`);
-            await new Promise(r => setTimeout(r, 100));
-            if (this.dataChannel && this.dataChannel.bufferedAmount > DYNAMIC_HIGH_WATER_MARK) {
-              await this._waitForBufferDrain(DYNAMIC_LOW_WATER_MARK);
-            }
-          } else {
-            throw e;
-          }
-        }
-      }
-
-      this._filePlaintextBytesSent += chunkPlaintextSize;
-      this.progress.sentBytes += chunkPlaintextSize;
-      this._bytesSinceLastUpdate += chunkPlaintextSize;
-
-      this._updateProgressStats();
-
-      // 7. CRITICAL: Yield to the browser event loop every 5 chunks
-      // This allows ICE STUN keepalive responses to be processed.
-      // Without this, the tight send loop starves the ICE agent and
-      // the connection times out even though data is flowing.
-      if (chunkIndex % 5 === 0) {
-        await new Promise(r => setTimeout(r, 0));
-      }
-    }
-  }
-
-  /**
-   * Wait for DataChannel buffer to drain below lowWaterMark
-   */
   _waitForBufferDrain(lowWaterMark) {
     return new Promise((resolve) => {
       if (!this.dataChannel || this.dataChannel.bufferedAmount <= lowWaterMark) {
         return resolve();
       }
 
-      this.dataChannel.bufferedAmountLowThreshold = lowWaterMark;
+      const channel = this.dataChannel;
+      channel.bufferedAmountLowThreshold = lowWaterMark;
       let done = false;
 
       const cleanup = () => {
         if (!done) {
           done = true;
-          if (this.dataChannel) {
-            this.dataChannel.removeEventListener('bufferedamountlow', onLow);
+          if (channel) {
+            channel.removeEventListener('bufferedamountlow', onLow);
           }
           if (timer) clearInterval(timer);
           resolve();
@@ -813,34 +962,34 @@ progress: ${this.progress?.percentage}`);
 
       const onLow = () => cleanup();
 
-      // Backup polling in case browser doesn't fire 'bufferedamountlow' and to update UI progress while draining
+      // Backup polling in case browser doesn't fire 'bufferedamountlow'
       const timer = setInterval(() => {
         this._updateProgressStats();
-        if (!this.dataChannel || this.dataChannel.bufferedAmount <= lowWaterMark) {
+        if (!channel || channel.bufferedAmount <= lowWaterMark) {
           cleanup();
         }
       }, 50);
 
-      this.dataChannel.addEventListener('bufferedamountlow', onLow);
+      channel.addEventListener('bufferedamountlow', onLow);
     });
   }
+
+  // ═══════════════════════════════════════════════════════════
+  //  PROGRESS STATS
+  // ═══════════════════════════════════════════════════════════
 
   _updateProgressStats() {
     const now = Date.now();
     const dt = (now - this._lastUpdate) / 1000;
 
-    // Initialize track variable for actual sent bytes if undefined
     if (this._lastActualSentBytes === undefined) {
       this._lastActualSentBytes = 0;
     }
 
-    // Update UI every 100ms for smooth progress
     if (dt >= 0.1) {
-      // Calculate actual bytes transferred over the wire
       const buffered = this.dataChannel ? this.dataChannel.bufferedAmount : 0;
       const actualSentBytes = Math.max(0, this.progress.sentBytes - buffered);
 
-      // Speed calculation (bytes per second over wire)
       const currentSpeed = Math.max(0, actualSentBytes - this._lastActualSentBytes) / dt;
       
       this._speedHistory.push(currentSpeed);
@@ -852,7 +1001,6 @@ progress: ${this.progress?.percentage}`);
       const remainingBytes = this.progress.totalBytes - actualSentBytes;
       this.progress.eta = rollingSpeed > 0 ? remainingBytes / rollingSpeed : 0;
       
-      // Calculate true overall percentage
       this.progress.percentage = Math.min(100, Math.max(0, (actualSentBytes / this.progress.totalBytes) * 100));
 
       this._lastUpdate = now;
@@ -862,14 +1010,65 @@ progress: ${this.progress?.percentage}`);
     }
   }
 
+  // ═══════════════════════════════════════════════════════════
+  //  SCREEN WAKE LOCK
+  // ═══════════════════════════════════════════════════════════
+
+  async _acquireWakeLock() {
+    if (!('wakeLock' in navigator)) return;
+    if (this._wakeLock) return;
+    try {
+      this._wakeLock = await navigator.wakeLock.request('screen');
+      console.log('[WakeLock] Acquired');
+
+      this._visibilityHandler = async () => {
+        if (document.visibilityState === 'visible' && !this._wakeLock &&
+            (this.status === 'TRANSFERRING' || this.status === 'RECOVERING')) {
+          try {
+            this._wakeLock = await navigator.wakeLock.request('screen');
+            console.log('[WakeLock] Re-acquired after visibility change');
+          } catch (e) {
+            // Non-fatal
+          }
+        }
+      };
+      document.addEventListener('visibilitychange', this._visibilityHandler);
+    } catch (e) {
+      console.warn('[WakeLock] Not available:', e.message);
+    }
+  }
+
+  _releaseWakeLock() {
+    if (this._wakeLock) {
+      this._wakeLock.release().catch(() => {});
+      this._wakeLock = null;
+      console.log('[WakeLock] Released');
+    }
+    if (this._visibilityHandler) {
+      document.removeEventListener('visibilitychange', this._visibilityHandler);
+      this._visibilityHandler = null;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  CANCEL / CLEANUP
+  // ═══════════════════════════════════════════════════════════
+
   async cancelPortal() {
     console.log('[WebRTCTransport] Cancelling portal transfer session');
     this.isTransferCancelled = true;
     this._stopHeartbeat();
+    this._stopWatchdog();
+    this._releaseWakeLock();
 
     if (this._connectionTimeout) {
       clearTimeout(this._connectionTimeout);
       this._connectionTimeout = null;
+    }
+
+    if (this._iceQueueTimeout) {
+      clearTimeout(this._iceQueueTimeout);
+      this._iceQueueTimeout = null;
     }
 
     if (this.dataChannel) {

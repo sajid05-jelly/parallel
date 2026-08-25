@@ -19,14 +19,18 @@ export class WebRTCReceiverTransport {
     this.session = null;
     this.status = 'IDLE';
     this.isCompleted = false;
+    this.isTransferCancelled = false;
 
     this.peerConnection = null;
     this.dataChannel = null;
     this.signaling = null;
 
     this.manifest = null;
-    this.receivedFiles = new Map(); // fileId -> { info, chunks: Map(index -> ArrayBuffer), plaintextBytes: 0 }
+    this.receivedFiles = new Map(); // fileId -> { info, chunks, plaintextBytes, ... }
     this.completedFiles = []; // { file, blob, filename, mimeType, fileId }
+
+    // Set of fileIds that have been fully assembled — prevents double-assembly
+    this._assembledFileIds = new Set();
 
     this.progress = {
       totalBytes: 0,
@@ -44,17 +48,28 @@ export class WebRTCReceiverTransport {
     this._bytesSinceLastUpdate = 0;
     this._iceCandidateQueue = [];
     this._connectionTimeout = null;
+
+    // ICE candidate outgoing queue (for signaling during disconnect)
+    this._outgoingIceQueue = [];
+
+    // Wake Lock
+    this._wakeLock = null;
+    this._visibilityHandler = null;
+
+    // Recovery watchdog
+    this._recoveryStartTime = 0;
   }
 
   _updateStatus(newStatus) {
-    console.log(`[ReceiverTransport] Status changed: ${this.status} -> ${newStatus}`);
+    console.log(`[ReceiverTransport] Status: ${this.status} -> ${newStatus}`);
     this.status = newStatus;
     this.onStatusChange(newStatus);
   }
 
-  /**
-   * Connect as receiver: validate token, import AES key, join signaling channel & create WebRTC Answer
-   */
+  // ═══════════════════════════════════════════════════════════
+  //  CONNECT AS RECEIVER
+  // ═══════════════════════════════════════════════════════════
+
   async connect(token, keyString) {
     this.token = token;
     this.keyString = keyString;
@@ -63,24 +78,16 @@ export class WebRTCReceiverTransport {
     this.receiverInstanceId = Math.random().toString(36).substring(7);
 
     console.log(`\n[PORTAL CONNECTION]
-portalId: ${this.token}
-receiverInstanceId: ${this.receiverInstanceId}
-existingPeerConnection: ${!!this.peerConnection}
-existingDataChannel: ${!!this.dataChannel}
-connectionState: ${this.peerConnection?.connectionState || 'none'}
-iceConnectionState: ${this.peerConnection?.iceConnectionState || 'none'}
-transferState: ${this.status}\n`);
+  portalId: ${this.token}
+  receiverInstanceId: ${this.receiverInstanceId}
+  existingPeerConnection: ${!!this.peerConnection}
+  connectionState: ${this.peerConnection?.connectionState || 'none'}
+  transferState: ${this.status}\n`);
 
     // 1. Import AES key from URL fragment
     if (keyString) {
       this.encryptionKey = await importEncryptionKey(keyString);
     }
-
-    console.log(`\n[PORTAL JOIN]
-portalId: ${this.token}
-receiverInstanceId: ${this.receiverInstanceId}
-connectionState: ${this.peerConnection?.connectionState || 'none'}
-`);
 
     // 2. Validate session & claim receiver slot in database
     let receiverCredential;
@@ -99,11 +106,8 @@ connectionState: ${this.peerConnection?.connectionState || 'none'}
     } catch (e) {
       if (e.message === 'ALREADY_CONNECTED') {
         console.error(`\n[PORTAL ALREADY CONNECTED]
-portalId: ${this.token}
-receiverInstanceId: ${this.receiverInstanceId}
-pcState: ${this.peerConnection?.connectionState || 'none'}
-dataChannelState: ${this.dataChannel?.readyState || 'none'}
-transferState: ${this.status}\n`);
+  portalId: ${this.token}
+  receiverInstanceId: ${this.receiverInstanceId}\n`);
       }
       throw e;
     }
@@ -115,9 +119,9 @@ transferState: ${this.status}\n`);
     await this.signaling.subscribe({
       onAlreadyConnected: () => {
         console.error(`\n[PORTAL ALREADY CONNECTED]
-portalId: ${this.token}
-receiverInstanceId: ${this.receiverInstanceId}
-transferState: ${this.status}\n`);
+  portalId: ${this.token}
+  receiverInstanceId: ${this.receiverInstanceId}
+  transferState: ${this.status}\n`);
         if (!this.isCompleted) {
           this.onError(new Error('ALREADY_CONNECTED'));
           this._updateStatus('FAILED');
@@ -131,14 +135,11 @@ transferState: ${this.status}\n`);
       onIceCandidate: async (candidate) => {
         console.log('[ReceiverTransport] Received ICE candidate from sender');
         if (this.peerConnection && candidate) {
-          if (!this.peerConnection.remoteDescription) {
+          try {
+            await this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+          } catch (e) {
+            console.warn('[ReceiverTransport] Error adding remote ICE candidate, queueing it:', e.message);
             this._iceCandidateQueue.push(candidate);
-          } else {
-            try {
-              await this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-            } catch (e) {
-              console.warn('[ReceiverTransport] Error adding remote ICE candidate:', e);
-            }
           }
         }
       },
@@ -157,7 +158,6 @@ transferState: ${this.status}\n`);
     await this.signaling.sendSignal('RECEIVER_CLAIMED', { credential: receiverCredential });
 
     // Connection timeout — only fires if data channel never opens
-    // Once MANIFEST arrives we clear this immediately
     this._connectionTimeout = setTimeout(() => {
       const safeStates = ['CONNECTED', 'WAITING', 'TRANSFERRING', 'COMPLETED'];
       if (!safeStates.includes(this.status)) {
@@ -177,12 +177,14 @@ transferState: ${this.status}\n`);
       await this.peerConnection.setRemoteDescription(new RTCSessionDescription(offerSdp));
 
       // Process queued ICE candidates now that remote description is set
-      while (this._iceCandidateQueue.length > 0) {
-        const cand = this._iceCandidateQueue.shift();
+      const retryQueue = [...this._iceCandidateQueue];
+      this._iceCandidateQueue = [];
+      for (const cand of retryQueue) {
         try {
           await this.peerConnection.addIceCandidate(new RTCIceCandidate(cand));
         } catch (e) {
-          console.warn('[ReceiverTransport] Error adding queued ICE candidate:', e);
+          console.warn('[ReceiverTransport] Still failed to add queued ICE candidate:', e.message);
+          this._iceCandidateQueue.push(cand);
         }
       }
 
@@ -197,107 +199,192 @@ transferState: ${this.status}\n`);
     }
   }
 
+  // ═══════════════════════════════════════════════════════════
+  //  PEER CONNECTION SETUP
+  // ═══════════════════════════════════════════════════════════
+
   _setupPeerConnection() {
-    console.log('[ReceiverTransport] Initializing RTCPeerConnection with ICE servers:', ICE_SERVERS);
+    console.log('[ReceiverTransport] Initializing RTCPeerConnection');
     this.peerConnection = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+
+    this._outgoingIceQueue = [];
 
     this.peerConnection.onicecandidate = (event) => {
       if (event.candidate && this.signaling) {
         console.log('[ReceiverTransport] Sending ICE candidate to sender');
-        this.signaling.sendSignal('ICE_CANDIDATE', event.candidate);
+        this._outgoingIceQueue.push(event.candidate);
+        this._flushOutgoingIceQueue();
       }
     };
 
+    // ── CONNECTION STATE HANDLER ──
     this.peerConnection.onconnectionstatechange = () => {
       const state = this.peerConnection?.connectionState;
       const iceState = this.peerConnection?.iceConnectionState;
-      console.log(`[ReceiverTransport] PeerConnection state: ${state}, ICE state: ${iceState}`);
+      console.log(`[ReceiverTransport] PeerConnection state: ${state}, ICE: ${iceState}, DC: ${this.dataChannel?.readyState}`);
 
       if (state === 'connected') {
         if (this._connectionTimeout) {
           clearTimeout(this._connectionTimeout);
           this._connectionTimeout = null;
         }
-        if (this._recoveryTimeout) {
-          clearTimeout(this._recoveryTimeout);
-          this._recoveryTimeout = null;
+        this._recoveryStartTime = 0;
+
+        if (this.status === 'RECOVERING') {
+          this._updateStatus('TRANSFERRING');
+        } else if (this.status !== 'WAITING' && this.status !== 'TRANSFERRING' && this.status !== 'COMPLETED') {
+          this._updateStatus('CONNECTED');
         }
-        if (this.status === 'RECOVERING' || (this.status !== 'WAITING' && this.status !== 'TRANSFERRING' && this.status !== 'COMPLETED')) {
-          if (this.status === 'RECOVERING') {
-            this._updateStatus('TRANSFERRING');
-          } else {
-            this._updateStatus('CONNECTED');
-          }
+
+      } else if (state === 'disconnected') {
+        console.warn(`[ReceiverTransport] PeerConnection disconnected — waiting for sender ICE restart.`);
+        if (this.status === 'TRANSFERRING' || this.status === 'CONNECTED') {
+          this._updateStatus('RECOVERING');
+          this._recoveryStartTime = Date.now();
+          this._startRecoveryWatchdog();
         }
+
       } else if (state === 'failed') {
         if (this._connectionTimeout) {
           clearTimeout(this._connectionTimeout);
           this._connectionTimeout = null;
         }
         if (!this.isCompleted && this.status !== 'COMPLETED') {
-          console.error('[ReceiverTransport] PeerConnection failed. ICE state:', iceState);
-          
-          if (this._recoveryTimeout) clearTimeout(this._recoveryTimeout);
-          this._recoveryTimeout = setTimeout(() => {
-            if (this.isTransferCancelled || this.status === 'COMPLETED') return;
-            if (this.peerConnection?.iceConnectionState === 'connected' || this.peerConnection?.iceConnectionState === 'completed') return;
-
-            // Do not fail if data channel is still open (indicates backpressure, not fatal death)
-            if (this.dataChannel?.readyState === 'open') {
-              console.warn('[ReceiverTransport] Ignoring failed state because DataChannel is still open.');
-              return;
-            }
-
-            this.onError(new Error('WebRTC connection failed. Please check your network and try again.'));
-            this._updateStatus('FAILED');
-          }, 45000);
-        }
-      } else if (state === 'disconnected') {
-        console.warn(`[ReceiverTransport] PeerConnection disconnected — waiting for sender ICE restart. dataChannel: ${this.dataChannel?.readyState}`);
-        if (this.status === 'TRANSFERRING') {
-          this._updateStatus('RECOVERING');
+          if (this.status === 'TRANSFERRING' || this.status === 'CONNECTED') {
+            this._updateStatus('RECOVERING');
+            this._recoveryStartTime = Date.now();
+            this._startRecoveryWatchdog();
+          }
         }
       }
     };
 
-    // Receiver waits for DataChannel created by sender
+    // ── RECEIVE DATA CHANNEL ──
+    // This fires both on initial connection AND on recovery (when sender recreates DC).
+    // CRITICAL: Do NOT reset any received data. Only accept the new channel.
     this.peerConnection.ondatachannel = (event) => {
-      console.log('[ReceiverTransport] RTCDataChannel received from sender');
-      this.dataChannel = event.channel;
-      this.dataChannel.binaryType = 'arraybuffer';
-
-      this.dataChannel.onopen = () => {
-        console.log('[ReceiverTransport] DataChannel open');
-        if (this._connectionTimeout) {
-          clearTimeout(this._connectionTimeout);
-          this._connectionTimeout = null;
-        }
-        if (this.status !== 'WAITING' && this.status !== 'TRANSFERRING' && this.status !== 'COMPLETED') {
-          this._updateStatus('CONNECTED');
-        }
-        
-        this._startHeartbeat();
-      };
-
-      this.dataChannel.onmessage = (event) => {
-        this._handleDataChannelMessage(event.data);
-      };
-
-      this.dataChannel.onerror = (err) => {
-        console.error('[ReceiverTransport] DataChannel error:', JSON.stringify(err), err);
-      };
-
-      this.dataChannel.onclose = () => {
-        console.log('[ReceiverTransport] DataChannel closed. isCompleted:', this.isCompleted, 'status:', this.status);
-        this._stopHeartbeat();
-        // Do not immediately fail. The ICE connection might be recovering.
-        if (!this.isCompleted && this.status === 'TRANSFERRING') {
-          console.warn('[ReceiverTransport] DataChannel closed unexpectedly! Waiting for ICE recovery...');
-          this._updateStatus('RECOVERING');
-        }
-      };
+      console.log('[ReceiverTransport] DataChannel received from sender');
+      this._attachDataChannel(event.channel);
     };
   }
+
+  /**
+   * Attach handlers to a DataChannel.
+   * Called on initial connection AND on replacement channels during recovery.
+   * NEVER resets received file data or progress.
+   */
+  _attachDataChannel(channel) {
+    // Close old channel if it exists and is different
+    if (this.dataChannel && this.dataChannel !== channel) {
+      try { this.dataChannel.close(); } catch(e) {}
+    }
+
+    this.dataChannel = channel;
+    this.dataChannel.binaryType = 'arraybuffer';
+
+    this.dataChannel.onopen = () => {
+      console.log('[ReceiverTransport] DataChannel open');
+      if (this._connectionTimeout) {
+        clearTimeout(this._connectionTimeout);
+        this._connectionTimeout = null;
+      }
+      this._recoveryStartTime = 0;
+
+      if (this.status === 'RECOVERING') {
+        // Recovery succeeded — resume receiving chunks
+        this._updateStatus('TRANSFERRING');
+      } else if (this.status !== 'WAITING' && this.status !== 'TRANSFERRING' && this.status !== 'COMPLETED') {
+        this._updateStatus('CONNECTED');
+      }
+
+      this._startHeartbeat();
+      this._acquireWakeLock();
+    };
+
+    this.dataChannel.onmessage = (event) => {
+      this._handleDataChannelMessage(event.data);
+    };
+
+    this.dataChannel.onerror = (err) => {
+      console.error('[ReceiverTransport] DataChannel error:', err);
+    };
+
+    this.dataChannel.onclose = () => {
+      console.log('[ReceiverTransport] DataChannel closed. isCompleted:', this.isCompleted, 'status:', this.status);
+      this._stopHeartbeat();
+      if (!this.isCompleted && (this.status === 'TRANSFERRING' || this.status === 'CONNECTED')) {
+        console.warn('[ReceiverTransport] DataChannel closed unexpectedly! Waiting for ICE recovery...');
+        this._updateStatus('RECOVERING');
+        this._recoveryStartTime = Date.now();
+        this._startRecoveryWatchdog();
+      }
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  ICE CANDIDATE QUEUE (outgoing, for signaling during disconnect)
+  // ═══════════════════════════════════════════════════════════
+
+  async _flushOutgoingIceQueue() {
+    if (!this.signaling || this._outgoingIceQueue.length === 0) return;
+
+    const remainingQueue = [];
+    for (const candidate of this._outgoingIceQueue) {
+      try {
+        await this.signaling.sendSignal('ICE_CANDIDATE', candidate);
+        console.log('[ReceiverTransport] Successfully sent queued ICE candidate');
+      } catch (err) {
+        console.warn('[ReceiverTransport] Failed to send ICE candidate (will retry):', err.message);
+        remainingQueue.push(candidate);
+      }
+    }
+    this._outgoingIceQueue = remainingQueue;
+
+    if (this._outgoingIceQueue.length > 0) {
+      if (this._iceQueueTimeout) clearTimeout(this._iceQueueTimeout);
+      this._iceQueueTimeout = setTimeout(() => this._flushOutgoingIceQueue(), 1000);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  RECOVERY WATCHDOG
+  //  If RECOVERING for more than 120s with no DataChannel activity,
+  //  declare failure. But does NOT destroy already-received data.
+  // ═══════════════════════════════════════════════════════════
+
+  _startRecoveryWatchdog() {
+    this._stopRecoveryWatchdog();
+    this._recoveryWatchdogInterval = setInterval(() => {
+      if (this.status !== 'RECOVERING') {
+        this._stopRecoveryWatchdog();
+        return;
+      }
+      if (this.isCompleted || this.isTransferCancelled) {
+        this._stopRecoveryWatchdog();
+        return;
+      }
+
+      const elapsed = Date.now() - this._recoveryStartTime;
+      if (elapsed > 120000) {
+        console.error(`[RECOVERY WATCHDOG] Recovery timed out after ${Math.round(elapsed/1000)}s`);
+        this._stopRecoveryWatchdog();
+        this.onError(new Error('Connection to sender lost. Please try again.'));
+        this._updateStatus('FAILED');
+        this._releaseWakeLock();
+      }
+    }, 10000);
+  }
+
+  _stopRecoveryWatchdog() {
+    if (this._recoveryWatchdogInterval) {
+      clearInterval(this._recoveryWatchdogInterval);
+      this._recoveryWatchdogInterval = null;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  HEARTBEAT
+  // ═══════════════════════════════════════════════════════════
 
   _startHeartbeat() {
     this._stopHeartbeat();
@@ -317,9 +404,10 @@ transferState: ${this.status}\n`);
     }
   }
 
-  /**
-   * Handle incoming DataChannel messages (Manifest, Control, Binary Chunks)
-   */
+  // ═══════════════════════════════════════════════════════════
+  //  INCOMING MESSAGE HANDLER
+  // ═══════════════════════════════════════════════════════════
+
   async _handleDataChannelMessage(data) {
     const msg = decodeMessage(data);
 
@@ -327,7 +415,6 @@ transferState: ${this.status}\n`);
       if (msg.type === MESSAGE_TYPES.MANIFEST) {
         console.log('[ReceiverTransport] Received Manifest:', JSON.stringify(msg.payload.files?.map(f => ({ name: f.name, size: f.size, totalChunks: f.totalChunks }))));
 
-        // Manifest received = data channel is working → cancel connection timeout
         if (this._connectionTimeout) {
           clearTimeout(this._connectionTimeout);
           this._connectionTimeout = null;
@@ -343,17 +430,23 @@ transferState: ${this.status}\n`);
         console.log(`[ReceiverTransport] FILE_START: ${fileId}`);
         const fileInfo = this.manifest?.files?.find(f => f.id === fileId);
         if (fileInfo) {
-          this.progress.currentFile = fileInfo;
-          this.receivedFiles.set(fileInfo.id, {
-            info: fileInfo,
-            pendingParts: [],
-            pendingPartsSize: 0,
-            mergedBlobs: [],
-            chunkCount: 0,
-            plaintextBytes: 0,
-            pendingDecryptions: 0,
-            lastAckBytes: 0
-          });
+          // ── Idempotent: Do NOT reset if we're already receiving this file ──
+          if (!this.receivedFiles.has(fileInfo.id) && !this._assembledFileIds.has(fileId)) {
+            this.progress.currentFile = fileInfo;
+            this.receivedFiles.set(fileInfo.id, {
+              info: fileInfo,
+              pendingParts: [],
+              pendingPartsSize: 0,
+              mergedBlobs: [],
+              chunkCount: 0,
+              plaintextBytes: 0,
+              pendingDecryptions: 0,
+              lastAckBytes: 0
+            });
+          } else {
+            // Already receiving or assembled — just update current file reference
+            this.progress.currentFile = fileInfo;
+          }
         } else {
           console.warn('[ReceiverTransport] FILE_START for unknown fileId:', fileId);
         }
@@ -361,9 +454,14 @@ transferState: ${this.status}\n`);
       } else if (msg.type === MESSAGE_TYPES.FILE_END) {
         const fileId = msg.payload.fileId;
         console.log(`[ReceiverTransport] FILE_END: ${fileId}`);
-        await this._assembleFile(fileId);
-        this.progress.filesReceived++;
-        
+
+        // ── Idempotent: Only assemble once ──
+        if (!this._assembledFileIds.has(fileId)) {
+          await this._assembleFile(fileId);
+          this.progress.filesReceived++;
+        }
+
+        // Always send FILE_COMPLETE (sender may need re-confirmation after recovery)
         if (this.dataChannel && this.dataChannel.readyState === 'open') {
           console.log(`[ReceiverTransport] Sending FILE_COMPLETE for ${fileId}`);
           this.dataChannel.send(encodeControlMessage(MESSAGE_TYPES.FILE_COMPLETE, { fileId }));
@@ -372,26 +470,34 @@ transferState: ${this.status}\n`);
       } else if (msg.type === MESSAGE_TYPES.TRANSFER_COMPLETE) {
         console.log('[ReceiverTransport] TRANSFER_COMPLETE received. Verifying all files...');
 
-        // Verify all expected files were assembled
-        const expectedFiles = this.manifest?.files || [];
-        const completedIds = new Set(this.completedFiles.map(f => f.fileId));
-        const missing = expectedFiles.filter(f => !completedIds.has(f.id));
+        if (!this.isCompleted) {
+          // Verify all expected files were assembled
+          const expectedFiles = this.manifest?.files || [];
+          const completedIds = new Set(this.completedFiles.map(f => f.fileId));
+          const missing = expectedFiles.filter(f => !completedIds.has(f.id));
 
-        if (missing.length > 0) {
-          console.error('[ReceiverTransport] Missing files at TRANSFER_COMPLETE:', missing.map(f => f.name));
-          // Still mark complete — don't block user if files arrived but verification edge case
+          if (missing.length > 0) {
+            console.error('[ReceiverTransport] Missing files at TRANSFER_COMPLETE:', missing.map(f => f.name));
+          }
+
+          this.isCompleted = true;
+          if (this._connectionTimeout) clearTimeout(this._connectionTimeout);
+          this._stopRecoveryWatchdog();
+
+          // Send ACK before calling onComplete
+          if (this.dataChannel && this.dataChannel.readyState === 'open') {
+            this.dataChannel.send(encodeControlMessage(MESSAGE_TYPES.TRANSFER_COMPLETE_ACK));
+          }
+
+          this._updateStatus('COMPLETED');
+          this._releaseWakeLock();
+          this.onComplete();
+        } else {
+          // Already completed — just re-send ACK in case sender missed it
+          if (this.dataChannel && this.dataChannel.readyState === 'open') {
+            this.dataChannel.send(encodeControlMessage(MESSAGE_TYPES.TRANSFER_COMPLETE_ACK));
+          }
         }
-
-        this.isCompleted = true;
-        if (this._connectionTimeout) clearTimeout(this._connectionTimeout);
-
-        // Send ACK before calling onComplete so sender receives confirmation
-        if (this.dataChannel && this.dataChannel.readyState === 'open') {
-          this.dataChannel.send(encodeControlMessage(MESSAGE_TYPES.TRANSFER_COMPLETE_ACK));
-        }
-
-        this._updateStatus('COMPLETED');
-        this.onComplete();
 
       } else if (msg.type === MESSAGE_TYPES.CANCEL) {
         if (!this.isCompleted && this.status !== 'COMPLETED') {
@@ -411,9 +517,11 @@ transferState: ${this.status}\n`);
     }
   }
 
-  /**
-   * Process binary chunk: decrypt payload and store in temporary buffer
-   */
+  // ═══════════════════════════════════════════════════════════
+  //  BINARY CHUNK HANDLER
+  //  Handles duplicate chunks safely for resume scenarios.
+  // ═══════════════════════════════════════════════════════════
+
   async _handleBinaryChunk(chunkMsg) {
     const { fileId, chunkIndex, totalChunks, payload } = chunkMsg;
     let fileRecord = this.receivedFiles.get(fileId);
@@ -425,12 +533,10 @@ transferState: ${this.status}\n`);
       };
       fileRecord = {
         info: fileInfo,
-        // Memory-efficient storage: accumulate ArrayBuffer refs in a flat array,
-        // and periodically merge into larger Blobs to avoid 100K+ individual objects
-        pendingParts: [],       // ArrayBuffer references waiting to be merged
-        pendingPartsSize: 0,    // Current byte count of pendingParts
-        mergedBlobs: [],        // Already-merged large Blobs (~4MB each)
-        chunkCount: 0,          // Total chunks received so far
+        pendingParts: [],
+        pendingPartsSize: 0,
+        mergedBlobs: [],
+        chunkCount: 0,
         plaintextBytes: 0,
         pendingDecryptions: 0,
         lastAckBytes: 0
@@ -447,7 +553,7 @@ transferState: ${this.status}\n`);
       fileRecord.chunkCount = 0;
     }
 
-    // Ignore duplicate chunks during a connection resume
+    // ── Ignore duplicate chunks during connection resume ──
     if (chunkIndex < fileRecord.chunkCount) {
       // Must still ACK so sender's flow control window doesn't freeze
       if (this.dataChannel?.readyState === 'open') {
@@ -479,8 +585,6 @@ transferState: ${this.status}\n`);
 
       // Memory-efficient storage: accumulate ArrayBuffer references
       // and periodically merge into larger Blobs to keep object count bounded.
-      // For a 1.6GB file with 16KB chunks (101K chunks), this reduces
-      // from 101K Blob objects to ~400 merged Blobs.
       fileRecord.pendingParts.push(plaintextPayload);
       fileRecord.pendingPartsSize += plaintextPayload.byteLength;
       fileRecord.chunkCount++;
@@ -498,15 +602,14 @@ transferState: ${this.status}\n`);
       this.progress.receivedBytes += plaintextPayload.byteLength;
       this._bytesSinceLastUpdate += plaintextPayload.byteLength;
 
-      // Flow control: Send ACK periodically to prevent sender from overflowing
-      // Use global receivedBytes for consistent comparison with sender's flow window
-      if (fileRecord.plaintextBytes - fileRecord.lastAckBytes >= 512 * 1024) { // Ack every 512KB
+      // Flow control: Send ACK periodically (every 512KB)
+      if (fileRecord.plaintextBytes - fileRecord.lastAckBytes >= 512 * 1024) {
         fileRecord.lastAckBytes = fileRecord.plaintextBytes;
         if (this.dataChannel?.readyState === 'open') {
           this.dataChannel.send(encodeControlMessage(MESSAGE_TYPES.ACK, {
             fileId,
             receivedBytes: fileRecord.plaintextBytes,
-            chunkIndex // Explicitly ACK the highest successfully processed chunk
+            chunkIndex
           }));
         }
       }
@@ -517,9 +620,10 @@ transferState: ${this.status}\n`);
     }
   }
 
-  /**
-   * User clicks "Receive Everything"
-   */
+  // ═══════════════════════════════════════════════════════════
+  //  USER ACCEPTS TRANSFER
+  // ═══════════════════════════════════════════════════════════
+
   acceptTransfer() {
     if (this.dataChannel && this.dataChannel.readyState === 'open') {
       console.log('[ReceiverTransport] Sending TRANSFER_ACCEPTED to sender');
@@ -532,10 +636,17 @@ transferState: ${this.status}\n`);
     }
   }
 
-  /**
-   * Assemble file chunks into a Blob and store in completedFiles
-   */
+  // ═══════════════════════════════════════════════════════════
+  //  FILE ASSEMBLY (chunks -> Blob)
+  // ═══════════════════════════════════════════════════════════
+
   async _assembleFile(fileId) {
+    // ── Idempotent: never assemble the same file twice ──
+    if (this._assembledFileIds.has(fileId)) {
+      console.log(`[ReceiverTransport] File ${fileId} already assembled — skipping`);
+      return;
+    }
+
     const fileRecord = this.receivedFiles.get(fileId);
     if (!fileRecord) {
       console.error('[ReceiverTransport] _assembleFile: no record for fileId:', fileId);
@@ -582,9 +693,16 @@ transferState: ${this.status}\n`);
     const file = new File([blob], info.name, { type: mimeType, lastModified: Date.now() });
     this.completedFiles.push({ file, blob, filename: info.name, mimeType, fileId });
 
+    // Mark as assembled (idempotency)
+    this._assembledFileIds.add(fileId);
+
     // Free raw chunk memory immediately
     this.receivedFiles.delete(fileId);
   }
+
+  // ═══════════════════════════════════════════════════════════
+  //  PROGRESS STATS
+  // ═══════════════════════════════════════════════════════════
 
   _updateProgressStats() {
     const now = Date.now();
@@ -609,13 +727,65 @@ transferState: ${this.status}\n`);
     }
   }
 
+  // ═══════════════════════════════════════════════════════════
+  //  SCREEN WAKE LOCK
+  // ═══════════════════════════════════════════════════════════
+
+  async _acquireWakeLock() {
+    if (!('wakeLock' in navigator)) return;
+    if (this._wakeLock) return; // Already acquired
+    try {
+      this._wakeLock = await navigator.wakeLock.request('screen');
+      console.log('[WakeLock] Receiver acquired');
+
+      this._visibilityHandler = async () => {
+        if (document.visibilityState === 'visible' && !this._wakeLock &&
+            (this.status === 'TRANSFERRING' || this.status === 'RECOVERING' || this.status === 'WAITING')) {
+          try {
+            this._wakeLock = await navigator.wakeLock.request('screen');
+            console.log('[WakeLock] Receiver re-acquired after visibility change');
+          } catch (e) {
+            // Non-fatal
+          }
+        }
+      };
+      document.addEventListener('visibilitychange', this._visibilityHandler);
+    } catch (e) {
+      console.warn('[WakeLock] Not available:', e.message);
+    }
+  }
+
+  _releaseWakeLock() {
+    if (this._wakeLock) {
+      this._wakeLock.release().catch(() => {});
+      this._wakeLock = null;
+      console.log('[WakeLock] Receiver released');
+    }
+    if (this._visibilityHandler) {
+      document.removeEventListener('visibilitychange', this._visibilityHandler);
+      this._visibilityHandler = null;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  //  CANCEL / CLEANUP
+  // ═══════════════════════════════════════════════════════════
+
   cancel() {
     console.log('[ReceiverTransport] Cancelling receiver transport session');
+    this.isTransferCancelled = true;
     this._stopHeartbeat();
-    
+    this._stopRecoveryWatchdog();
+    this._releaseWakeLock();
+
     if (this._connectionTimeout) {
       clearTimeout(this._connectionTimeout);
       this._connectionTimeout = null;
+    }
+
+    if (this._iceQueueTimeout) {
+      clearTimeout(this._iceQueueTimeout);
+      this._iceQueueTimeout = null;
     }
 
     if (this.dataChannel) {

@@ -113,6 +113,7 @@ export function useTransfer() {
     const incoming = Array.from(fileList);
     const errors = [];
     const addedNames = [];
+    const MAX_PORTAL_TRANSFER_BYTES = 10 * 1024 * 1024 * 1024;
 
     setFiles((prev) => {
       const existingKeys = new Set(prev.map((f) => f._key));
@@ -134,7 +135,12 @@ export function useTransfer() {
           break;
         }
 
-
+        // Portal size validation
+        const totalAfterAdd = currentSize + file.size;
+        if (totalAfterAdd > MAX_PORTAL_TRANSFER_BYTES) {
+          errors.push(`Adding "${file.name}" would exceed portal limit of 10 GB.`);
+          continue;
+        }
 
         let preview = null;
         if (file.type && file.type.startsWith('image/')) {
@@ -189,12 +195,21 @@ export function useTransfer() {
 
   const createPortal = useCallback(async () => {
     console.trace('[DIAG_TRACE_SENDER] createPortal called');
+    // Verify total portal size does not exceed limit
+    const totalSize = files.reduce((sum, f) => sum + f.size, 0);
+    const MAX_PORTAL_TRANSFER_BYTES = 10 * 1024 * 1024 * 1024;
+    if (totalSize > MAX_PORTAL_TRANSFER_BYTES) {
+      const errMsg = 'Portal limit reached — maximum 10 GB can be transferred in a single portal.';
+      setError(errMsg);
+      setStatus('FAILED');
+      return;
+    }
     setFiles((currentFiles) => {
       if (currentFiles.length === 0) return currentFiles;
       _doCreatePortal(currentFiles);
       return currentFiles;
     });
-  }, []);
+  }, [files]);
 
   const isCreatingRef = useRef(false);
   const isCancelledRef = useRef(false);

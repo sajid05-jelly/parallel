@@ -1,5 +1,5 @@
-export const MAX_FILE_SIZE = Number(import.meta.env.VITE_MAX_FILE_SIZE) || 524288000; // 500MB
-export const MAX_TRANSFER_SIZE = Number(import.meta.env.VITE_MAX_TRANSFER_SIZE) || 1073741824; // 1GB  
+export const MAX_FILE_SIZE = Number(import.meta.env.VITE_MAX_FILE_SIZE) || 10737418240; // 10GB
+export const MAX_TRANSFER_SIZE = Number(import.meta.env.VITE_MAX_TRANSFER_SIZE) || 10737418240; // 10GB  
 export const MAX_FILES_PER_TRANSFER = Number(import.meta.env.VITE_MAX_FILES_PER_TRANSFER) || 50;
 
 // WebRTC DataChannel chunking configuration (Safe 64KB chunk slice & 1MB buffer window to prevent queue overflow)

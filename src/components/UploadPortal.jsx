@@ -98,7 +98,7 @@ const UploadPortal = ({ onFilesSelected, disabled = false }) => {
           </button>
           
           <p className="text-[12px] text-[#6B7280]">
-            Photos, videos, and documents up to 500MB
+            Photos, videos, and documents up to 10GB
           </p>
         </div>
       </div>
