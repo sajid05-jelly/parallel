@@ -8,13 +8,7 @@ import TransferProgress from '../components/TransferProgress';
 import ErrorState from '../components/ErrorState';
 import { formatFileSize, getFileIcon, getFileTypeCategory } from '../config/constants';
 
-// Detect iOS Safari / iOS Chrome
-function isIOSDevice() {
-  return (
-    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
-  );
-}
+
 
 function FileDownloadItem({ file, onDownload }) {
   const [busy, setBusy] = useState(false);
@@ -77,36 +71,7 @@ export default function ReceiverPage({ token, keyString }) {
       return;
     }
 
-    const ios = isIOSDevice();
-
-    // iOS Safari/Chrome: <a download> was historically ignored but works in iOS 13+.
-    // We use Web Share API for smaller files so the user gets the native Share Sheet (Save Image/Video).
-    // However, sharing massive files (>50MB) via navigator.share causes an immediate Out Of Memory crash on iOS.
-    const isMassiveFile = item.blob.size > 50 * 1024 * 1024; // > 50MB
-    if (ios && navigator.share && navigator.canShare && !isMassiveFile) {
-      try {
-        const fallbackType = item.filename.toLowerCase().endsWith('.jpg') || item.filename.toLowerCase().endsWith('.jpeg') ? 'image/jpeg' 
-                           : item.filename.toLowerCase().endsWith('.png') ? 'image/png'
-                           : item.filename.toLowerCase().endsWith('.mp4') ? 'video/mp4'
-                           : 'application/octet-stream';
-                           
-        const mimeType = item.mimeType || item.blob.type || fallbackType;
-        const fileObj = item.file || new File([item.blob], item.filename, {
-          type: mimeType,
-          lastModified: Date.now(),
-        });
-        
-        if (navigator.canShare({ files: [fileObj] })) {
-          await navigator.share({ files: [fileObj] });
-          return;
-        }
-      } catch (err) {
-        if (err.name === 'AbortError') return;
-        console.warn('[ReceiverPage] iOS share failed, falling back to blob URL:', err);
-      }
-    }
-
-    // Android / Desktop: standard Blob URL download
+    // Standard Blob URL Native Browser Download (iOS / Android / Desktop)
     const url = URL.createObjectURL(item.blob);
     const a = document.createElement('a');
     a.href = url;
