@@ -30,6 +30,11 @@ export class SupabaseSignaling {
       !key.includes('placeholder-key') &&
       (url.startsWith('http://') || url.startsWith('https://'))
     );
+
+    // Signaling health tracking
+    this.isConnected = false;
+    this._resubscribeTimer = null;
+    this._initialResolve = null;
   }
 
 
@@ -44,6 +49,7 @@ export class SupabaseSignaling {
       this.supabaseChannel = supabase.channel(this.channelName);
 
       return new Promise((resolve) => {
+        this._initialResolve = resolve;
         this.supabaseChannel
           .on('broadcast', { event: 'signal' }, ({ payload }) => {
             this._handleSignalPayload(payload);
@@ -51,7 +57,15 @@ export class SupabaseSignaling {
           .subscribe((status) => {
             console.log(`[Signaling] Supabase Realtime channel status for ${this.peerRole}: ${status}`);
             if (status === 'SUBSCRIBED') {
-              resolve(true);
+              this.isConnected = true;
+              if (this._initialResolve) {
+                this._initialResolve(true);
+                this._initialResolve = null;
+              }
+            } else if (status === 'TIMED_OUT' || status === 'CHANNEL_ERROR' || status === 'CLOSED') {
+              console.warn(`[Signaling] Channel ${status} for ${this.peerRole} — scheduling resubscribe`);
+              this.isConnected = false;
+              this._scheduleResubscribe();
             }
           });
       });
@@ -82,6 +96,9 @@ export class SupabaseSignaling {
    * Send a signaling message
    */
   async sendSignal(type, payload) {
+    if (!this.isConnected && this.isRealSupabase) {
+      console.warn(`[Signaling] Sending ${type} while signaling channel is disconnected — delivery not guaranteed`);
+    }
 
     const message = {
       type,
@@ -141,10 +158,55 @@ export class SupabaseSignaling {
   }
 
   /**
+   * Auto-resubscribe when Supabase Realtime channel disconnects.
+   * Prevents silent signaling death during transfers.
+   */
+  _scheduleResubscribe() {
+    if (this._resubscribeTimer) return; // Already scheduled
+    this._resubscribeTimer = setTimeout(async () => {
+      this._resubscribeTimer = null;
+      if (this.isConnected) return; // Already recovered
+
+      console.log(`[Signaling] Attempting resubscribe for ${this.peerRole}...`);
+      try {
+        // Remove old channel
+        if (this.supabaseChannel) {
+          try { supabase.removeChannel(this.supabaseChannel); } catch (e) {}
+        }
+
+        // Create new channel with same broadcast handler
+        this.supabaseChannel = supabase.channel(this.channelName);
+        this.supabaseChannel
+          .on('broadcast', { event: 'signal' }, ({ payload }) => {
+            this._handleSignalPayload(payload);
+          })
+          .subscribe((status) => {
+            console.log(`[Signaling] Resubscribe status for ${this.peerRole}: ${status}`);
+            if (status === 'SUBSCRIBED') {
+              this.isConnected = true;
+              console.log(`[Signaling] Resubscribe succeeded for ${this.peerRole}`);
+            } else if (status === 'TIMED_OUT' || status === 'CHANNEL_ERROR' || status === 'CLOSED') {
+              this.isConnected = false;
+              this._scheduleResubscribe();
+            }
+          });
+      } catch (e) {
+        console.error('[Signaling] Resubscribe failed:', e);
+        this._scheduleResubscribe();
+      }
+    }, 3000);
+  }
+
+  /**
    * Unsubscribe and cleanup signaling connection
    */
   unsubscribe() {
     console.log(`[Signaling] Unsubscribing channel: ${this.channelName}`);
+    this.isConnected = false;
+    if (this._resubscribeTimer) {
+      clearTimeout(this._resubscribeTimer);
+      this._resubscribeTimer = null;
+    }
     if (this.supabaseChannel) {
       supabase.removeChannel(this.supabaseChannel);
       this.supabaseChannel = null;

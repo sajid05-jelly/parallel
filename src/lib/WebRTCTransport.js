@@ -73,6 +73,9 @@ export class WebRTCTransport {
     // ICE candidate queues
     this._outgoingIceQueue = [];
     this._iceCandidateQueue = [];
+
+    // Single-flight ICE restart tracking
+    this._answerReceived = false;
   }
 
   setFiles(fileList) {
@@ -132,6 +135,8 @@ export class WebRTCTransport {
         if (this.peerConnection) {
           try {
             await this.peerConnection.setRemoteDescription(new RTCSessionDescription(answerSdp));
+            this._answerReceived = true;
+            console.log('[WebRTCTransport] Remote description (answer) set successfully');
             if (this.status === 'WAITING' || this.status === 'CREATING') {
               this._updateStatus('NEGOTIATING');
             }
@@ -293,13 +298,20 @@ export class WebRTCTransport {
         }
 
         if (this.status === 'RECOVERING') {
-          this._updateStatus('TRANSFERRING');
+          // Bug fix: Only transition to TRANSFERRING when DataChannel is ALSO open.
+          // If DC is not open yet, the DC onopen handler will handle the transition.
+          if (this.dataChannel?.readyState === 'open') {
+            this._updateStatus('TRANSFERRING');
+          } else {
+            console.log('[WebRTCTransport] PC connected during recovery but DC not open yet — waiting for DC onopen');
+          }
         } else if (this.status !== 'TRANSFERRING' && this.status !== 'COMPLETED') {
           this._updateStatus('CONNECTED');
         }
 
       } else if (state === 'disconnected') {
         this._iceHealthy = false;
+        this._logDiagnostics('ICE_DISCONNECTED');
         if (this.status === 'TRANSFERRING' || this.status === 'CONNECTED') {
           this._updateStatus('RECOVERING');
         }
@@ -308,6 +320,7 @@ export class WebRTCTransport {
 
       } else if (state === 'failed') {
         this._iceHealthy = false;
+        this._logDiagnostics('ICE_FAILED');
         if (this.isTransferCancelled || this.isCompleted) return;
         if (this.status === 'TRANSFERRING' || this.status === 'CONNECTED') {
           this._updateStatus('RECOVERING');
@@ -403,8 +416,14 @@ export class WebRTCTransport {
   }
 
   // ═══════════════════════════════════════════════════════════
-  //  SINGLE RECOVERY PATH (MUTEX-PROTECTED)
-  //  Replaces all previous _doIceRestart / scattered setTimeout calls
+  //  SINGLE RECOVERY PATH (MUTEX-PROTECTED, 3-PHASE)
+  //
+  //  Phase 1: If PC is connected but DC dead → recreate DC only
+  //  Phase 2: Wait 3s for natural ICE self-healing
+  //  Phase 3: Single-flight ICE restart (one offer at a time)
+  //
+  //  NEVER creates a DataChannel while PC is disconnected/failed.
+  //  DataChannel is ONLY recreated after PC is connected.
   // ═══════════════════════════════════════════════════════════
 
   async _attemptRecovery() {
@@ -418,73 +437,137 @@ export class WebRTCTransport {
     }
 
     this._reconnectInProgress = true;
-    console.log('[RECOVERY] Starting controlled recovery...');
+    this._logDiagnostics('RECOVERY_START');
 
     try {
-      let delay = 1000; // Start at 1s, exponential backoff up to 8s
-      const MAX_ATTEMPTS = 12;
-
-      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-        if (this.isTransferCancelled || this.isCompleted || this.status === 'FAILED') break;
-
-        // Check if already recovered
-        if (this.peerConnection?.connectionState === 'connected' && this.dataChannel?.readyState === 'open') {
-          console.log(`[RECOVERY] Connection recovered after ${attempt} attempts`);
-          this._iceHealthy = true;
-          if (this.status === 'RECOVERING') this._updateStatus('TRANSFERRING');
-          return;
-        }
-
-        console.log(`[RECOVERY] Attempt ${attempt + 1}/${MAX_ATTEMPTS} (backoff: ${delay}ms)`);
-
-        try {
-          // Recreate DataChannel if it's closed/closing
-          if (!this.dataChannel || this.dataChannel.readyState === 'closed' || this.dataChannel.readyState === 'closing') {
-            console.log('[RECOVERY] Recreating DataChannel');
-            this._setupDataChannel();
+      // ── Phase 1: PC connected but DC dead → just recreate DC ──
+      if (this.peerConnection?.connectionState === 'connected') {
+        if (!this.dataChannel || this.dataChannel.readyState === 'closed' || this.dataChannel.readyState === 'closing') {
+          console.log('[RECOVERY] Phase 1: PC connected but DataChannel dead — recreating DC');
+          this._setupDataChannel();
+          for (let i = 0; i < 25; i++) { // Wait up to 5s
+            if (this._isConnectionHealthy()) {
+              console.log('[RECOVERY] Phase 1 success: DataChannel reopened');
+              this._iceHealthy = true;
+              if (this.status === 'RECOVERING') this._updateStatus('TRANSFERRING');
+              return;
+            }
+            await new Promise(r => setTimeout(r, 200));
           }
-
-          // ICE restart on existing PeerConnection
-          if (this.peerConnection && this.peerConnection.signalingState !== 'closed') {
-            this.peerConnection.restartIce();
-            await Promise.race([
-              (async () => {
-                const offer = await this.peerConnection.createOffer({ iceRestart: true });
-                await this.peerConnection.setLocalDescription(offer);
-                await this.signaling.sendSignal('OFFER', offer);
-              })(),
-              new Promise((_, reject) => setTimeout(() => reject(new Error('Signaling timeout')), 8000))
-            ]);
-            console.log('[RECOVERY] ICE restart offer sent');
-          }
-        } catch (e) {
-          console.warn(`[RECOVERY] Attempt ${attempt + 1} error:`, e.message);
         }
-
-        // Wait with exponential backoff
-        await new Promise(r => setTimeout(r, delay));
-        delay = Math.min(delay * 2, 8000);
-
-        // Check after wait
-        if (this.peerConnection?.connectionState === 'connected' && this.dataChannel?.readyState === 'open') {
-          console.log(`[RECOVERY] Connection recovered after attempt ${attempt + 1}`);
+        // DC might still be open — check
+        if (this._isConnectionHealthy()) {
+          console.log('[RECOVERY] Phase 1: connection is already healthy');
           this._iceHealthy = true;
           if (this.status === 'RECOVERING') this._updateStatus('TRANSFERRING');
           return;
         }
       }
 
-      // All recovery attempts exhausted
+      // ── Phase 2: Wait 3s for natural ICE recovery ──
+      // ICE 'disconnected' often self-heals without any intervention
+      console.log('[RECOVERY] Phase 2: Waiting 3s for natural ICE recovery...');
+      for (let i = 0; i < 15; i++) {
+        if (this.isTransferCancelled || this.status === 'FAILED') return;
+        if (this._isConnectionHealthy()) {
+          console.log('[RECOVERY] Phase 2 success: natural ICE recovery');
+          this._iceHealthy = true;
+          if (this.status === 'RECOVERING') this._updateStatus('TRANSFERRING');
+          return;
+        }
+        await new Promise(r => setTimeout(r, 200));
+      }
+
+      // ── Phase 3: Controlled ICE restart (single-flight, max 5 attempts) ──
+      const MAX_ATTEMPTS = 5;
+      let delay = 2000;
+
+      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+        if (this.isTransferCancelled || this.isCompleted || this.status === 'FAILED') break;
+
+        console.log(`[RECOVERY] Phase 3: ICE restart attempt ${attempt + 1}/${MAX_ATTEMPTS}`);
+        this._logDiagnostics(`ICE_RESTART_ATTEMPT_${attempt + 1}`);
+
+        // Check signaling health before attempting
+        if (this.signaling?.isConnected === false) {
+          console.warn('[RECOVERY] Signaling disconnected — waiting 5s for reconnect...');
+          await new Promise(r => setTimeout(r, 5000));
+          if (this.signaling?.isConnected === false) {
+            console.error('[RECOVERY] Signaling still disconnected — skipping attempt');
+            continue;
+          }
+        }
+
+        try {
+          if (!this.peerConnection || this.peerConnection.signalingState === 'closed') {
+            console.error('[RECOVERY] PeerConnection is closed — cannot restart ICE');
+            break;
+          }
+
+          // ── Single-flight: ONE offer, then wait for answer + connection ──
+          this._answerReceived = false;
+          const offer = await this.peerConnection.createOffer({ iceRestart: true });
+          await this.peerConnection.setLocalDescription(offer);
+          await this.signaling.sendSignal('OFFER', offer);
+          console.log('[RECOVERY] ICE restart offer sent, waiting for answer...');
+
+          // Wait up to 15s for connection recovery
+          const deadline = Date.now() + 15000;
+          while (Date.now() < deadline) {
+            if (this.isTransferCancelled || this.status === 'FAILED') break;
+
+            // Full health check
+            if (this._isConnectionHealthy()) {
+              console.log(`[RECOVERY] Phase 3 success on attempt ${attempt + 1}`);
+              this._iceHealthy = true;
+              if (this.status === 'RECOVERING') this._updateStatus('TRANSFERRING');
+              return;
+            }
+
+            // PC reconnected but DC is dead → recreate DC now (safe because PC is connected)
+            if (this.peerConnection?.connectionState === 'connected' &&
+                (!this.dataChannel || this.dataChannel.readyState === 'closed' || this.dataChannel.readyState === 'closing')) {
+              console.log('[RECOVERY] PC reconnected — recreating DataChannel');
+              this._setupDataChannel();
+              // Wait up to 3s for DC to open
+              for (let j = 0; j < 15; j++) {
+                if (this._isConnectionHealthy()) {
+                  console.log('[RECOVERY] DataChannel opened after ICE restart');
+                  this._iceHealthy = true;
+                  if (this.status === 'RECOVERING') this._updateStatus('TRANSFERRING');
+                  return;
+                }
+                await new Promise(r => setTimeout(r, 200));
+              }
+            }
+
+            await new Promise(r => setTimeout(r, 500));
+          }
+
+        } catch (e) {
+          console.warn(`[RECOVERY] Attempt ${attempt + 1} error:`, e.message);
+          this._logDiagnostics(`ICE_RESTART_ERROR_${attempt + 1}`);
+        }
+
+        // Backoff before next attempt
+        if (attempt < MAX_ATTEMPTS - 1) {
+          console.log(`[RECOVERY] Waiting ${Math.round(delay)}ms before next attempt...`);
+          await new Promise(r => setTimeout(r, delay));
+          delay = Math.min(delay * 1.5, 10000);
+        }
+      }
+
+      // ── All attempts exhausted ──
       if (!this.isCompleted && !this.isTransferCancelled && this.status !== 'FAILED') {
-        // Last chance: check if DataChannel is still open (backpressure, not death)
-        if (this.dataChannel?.readyState === 'open') {
-          console.warn('[RECOVERY] PeerConnection shows failed but DataChannel is open — not declaring failure');
+        // Final check
+        if (this._isConnectionHealthy()) {
           this._iceHealthy = true;
           if (this.status === 'RECOVERING') this._updateStatus('TRANSFERRING');
           return;
         }
 
-        console.error('[RECOVERY] All recovery attempts exhausted. Declaring failure.');
+        this._logDiagnostics('RECOVERY_FAILED');
+        console.error('[RECOVERY] All recovery attempts exhausted.');
         if (this.mode === 'nearby') {
           this.onError(new Error('Nearby Transfer: connection lost. Ensure both devices are on the same Wi-Fi.'));
         } else {
@@ -496,6 +579,41 @@ export class WebRTCTransport {
     } finally {
       this._reconnectInProgress = false;
     }
+  }
+
+  /**
+   * Returns true when BOTH PeerConnection is connected AND DataChannel is open.
+   */
+  _isConnectionHealthy() {
+    return this.peerConnection?.connectionState === 'connected' &&
+           this.dataChannel?.readyState === 'open';
+  }
+
+  /**
+   * Comprehensive diagnostic logging for every state transition.
+   */
+  _logDiagnostics(context) {
+    const diag = {
+      context,
+      timestamp: new Date().toISOString(),
+      role: 'sender',
+      connectionState: this.peerConnection?.connectionState || 'none',
+      iceConnectionState: this.peerConnection?.iceConnectionState || 'none',
+      iceGatheringState: this.peerConnection?.iceGatheringState || 'none',
+      signalingState: this.peerConnection?.signalingState || 'none',
+      dataChannelState: this.dataChannel?.readyState || 'none',
+      currentFile: this.progress.currentFile?.name || 'none',
+      sentBytes: this.progress.sentBytes,
+      totalBytes: this.progress.totalBytes,
+      bufferedAmount: this.dataChannel?.bufferedAmount || 0,
+      lastAckChunk: this._currentFileAck?.lastAckedChunk ?? -1,
+      lastAckTime: this._lastAckTime ? new Date(this._lastAckTime).toISOString() : 'never',
+      iceHealthy: this._iceHealthy,
+      reconnectInProgress: this._reconnectInProgress,
+      signalingConnected: this.signaling?.isConnected ?? 'unknown',
+      status: this.status
+    };
+    console.log('[TRANSFER_DEBUG]', JSON.stringify(diag, null, 2));
   }
 
   /**

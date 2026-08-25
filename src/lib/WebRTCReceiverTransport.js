@@ -67,6 +67,32 @@ export class WebRTCReceiverTransport {
   }
 
   // ═══════════════════════════════════════════════════════════
+  //  DIAGNOSTIC LOGGING
+  // ═══════════════════════════════════════════════════════════
+
+  _logDiagnostics(context) {
+    const diag = {
+      context,
+      timestamp: new Date().toISOString(),
+      role: 'receiver',
+      connectionState: this.peerConnection?.connectionState || 'none',
+      iceConnectionState: this.peerConnection?.iceConnectionState || 'none',
+      iceGatheringState: this.peerConnection?.iceGatheringState || 'none',
+      signalingState: this.peerConnection?.signalingState || 'none',
+      dataChannelState: this.dataChannel?.readyState || 'none',
+      currentFile: this.progress.currentFile?.name || 'none',
+      receivedBytes: this.progress.receivedBytes,
+      totalBytes: this.progress.totalBytes,
+      filesReceived: this.progress.filesReceived,
+      totalFiles: this.progress.totalFiles,
+      signalingConnected: this.signaling?.isConnected ?? 'unknown',
+      recoveryStartTime: this._recoveryStartTime ? new Date(this._recoveryStartTime).toISOString() : 'none',
+      status: this.status
+    };
+    console.log('[TRANSFER_DEBUG]', JSON.stringify(diag, null, 2));
+  }
+
+  // ═══════════════════════════════════════════════════════════
   //  CONNECT AS RECEIVER
   // ═══════════════════════════════════════════════════════════
 
@@ -172,8 +198,17 @@ export class WebRTCReceiverTransport {
 
   async _handleOffer(offerSdp) {
     if (!this.peerConnection) return;
+
+    // Guard: skip if we're in the middle of processing another offer
+    const sigState = this.peerConnection.signalingState;
+    if (sigState === 'have-local-pranswer') {
+      console.warn('[ReceiverTransport] Skipping offer — already processing one (signalingState:', sigState, ')');
+      return;
+    }
+
     try {
-      console.log('[ReceiverTransport] Setting Remote Description (Offer)');
+      this._logDiagnostics('OFFER_RECEIVED');
+      console.log('[ReceiverTransport] Setting Remote Description (Offer), signalingState:', sigState);
       await this.peerConnection.setRemoteDescription(new RTCSessionDescription(offerSdp));
 
       // Process queued ICE candidates now that remote description is set
@@ -194,8 +229,10 @@ export class WebRTCReceiverTransport {
 
       console.log('[ReceiverTransport] Sending Answer SDP to sender');
       await this.signaling.sendSignal('ANSWER', answer);
+      this._logDiagnostics('ANSWER_SENT');
     } catch (err) {
       console.error('[ReceiverTransport] Error handling offer:', err);
+      this._logDiagnostics('OFFER_ERROR');
     }
   }
 
@@ -231,12 +268,18 @@ export class WebRTCReceiverTransport {
         this._recoveryStartTime = 0;
 
         if (this.status === 'RECOVERING') {
-          this._updateStatus('TRANSFERRING');
+          // Only transition when DataChannel is also open
+          if (this.dataChannel?.readyState === 'open') {
+            this._updateStatus('TRANSFERRING');
+          } else {
+            console.log('[ReceiverTransport] PC connected during recovery but DC not open yet — waiting for ondatachannel');
+          }
         } else if (this.status !== 'WAITING' && this.status !== 'TRANSFERRING' && this.status !== 'COMPLETED') {
           this._updateStatus('CONNECTED');
         }
 
       } else if (state === 'disconnected') {
+        this._logDiagnostics('ICE_DISCONNECTED');
         console.warn(`[ReceiverTransport] PeerConnection disconnected — waiting for sender ICE restart.`);
         if (this.status === 'TRANSFERRING' || this.status === 'CONNECTED') {
           this._updateStatus('RECOVERING');
@@ -245,6 +288,7 @@ export class WebRTCReceiverTransport {
         }
 
       } else if (state === 'failed') {
+        this._logDiagnostics('ICE_FAILED');
         if (this._connectionTimeout) {
           clearTimeout(this._connectionTimeout);
           this._connectionTimeout = null;
