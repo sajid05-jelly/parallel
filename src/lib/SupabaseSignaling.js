@@ -23,7 +23,7 @@ export class SupabaseSignaling {
     };
 
     const url = import.meta.env.VITE_SUPABASE_URL;
-    const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY;
     this.isRealSupabase = Boolean(
       url && key &&
       !url.includes('placeholder.supabase.co') &&
@@ -86,6 +86,7 @@ export class SupabaseSignaling {
           this._localListener = (payload) => this._handleSignalPayload(payload);
           localSignalingHub.get(this.channelName).add(this._localListener);
         }
+        this.isConnected = true;
       } catch (err) {
         console.warn('[Signaling] Fallback initialization warning:', err);
       }

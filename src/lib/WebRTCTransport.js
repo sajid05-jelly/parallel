@@ -503,10 +503,10 @@ signalingState=${this.peerConnection?.signalingState}\n`);
         console.log(`[RECOVERY] Phase 3: ICE restart attempt ${attempt + 1}/${MAX_ATTEMPTS}`);
         this._logDiagnostics(`ICE_RESTART_ATTEMPT_${attempt + 1}`);
 
-        // Check signaling health before attempting
-        if (this.signaling?.isConnected === false) {
-          console.warn('[RECOVERY] Signaling disconnected — waiting 5s for reconnect...');
-          await new Promise(r => setTimeout(r, 5000));
+        // Check signaling health before attempting (only relevant for remote Supabase signaling)
+        if (this.signaling?.isRealSupabase && this.signaling?.isConnected === false) {
+          console.warn('[RECOVERY] Signaling disconnected — waiting 3s for reconnect...');
+          await new Promise(r => setTimeout(r, 3000));
           if (this.signaling?.isConnected === false) {
             console.error('[RECOVERY] Signaling still disconnected — skipping attempt');
             continue;

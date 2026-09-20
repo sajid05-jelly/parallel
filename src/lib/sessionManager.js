@@ -1,4 +1,5 @@
 import { base64urlEncode, base64urlDecode } from './crypto';
+import { isSupabaseConfigured, isSupabaseKeyValid } from '../config/supabase';
 
 // In-memory mock DB store when Supabase credentials are missing (local single-tab demo)
 // Note: In cross-device production, Supabase PostgreSQL is used.
@@ -15,15 +16,6 @@ export async function hashString(str) {
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-
-const isSupabaseConfigured = () => {
-  const url = import.meta.env.VITE_SUPABASE_URL;
-  const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
-  return Boolean(url && key);
-};
-
-
-
 export async function generateToken() {
   const randomBytes = window.crypto.getRandomValues(new Uint8Array(16));
   const hashArray = Array.from(randomBytes);
@@ -38,40 +30,55 @@ export async function createSession({ totalFiles, totalBytes, oneReceiverMode = 
     const { token, tokenHash } = await generateToken();
     const expiresAt = new Date(Date.now() + 120 * 1000).toISOString(); 
     
-    if (!isSupabaseConfigured()) {
-      const missingConfigErr = new Error('Supabase environment variables (VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY) are missing or invalid.');
+    if (!isSupabaseConfigured || !isSupabaseKeyValid) {
+      const missingConfigErr = new Error(
+        'Invalid or missing Supabase API Key (VITE_SUPABASE_ANON_KEY). ' +
+        'Please check your .env.local file and ensure standard Supabase credentials are provided.'
+      );
       console.error('[SessionManager]', missingConfigErr);
       return { session: null, token: null, error: missingConfigErr };
     }
 
-
+    const insertPayload = {
+      token_hash: tokenHash,
+      status: 'WAITING',
+      expires_at: expiresAt,
+      one_receiver_mode: oneReceiverMode,
+      total_files: totalFiles,
+      total_bytes: totalBytes,
+      uploaded_bytes: 0,
+      downloaded_bytes: 0,
+      receiver_connected: false
+    };
 
     const { supabase } = await import('../config/supabase');
     const { data: session, error } = await supabase
       .from('transfer_sessions')
-      .insert({
-        token_hash: tokenHash,
-        status: 'WAITING',
-        expires_at: expiresAt,
-        one_receiver_mode: oneReceiverMode,
-        total_files: totalFiles,
-        total_bytes: totalBytes,
-        uploaded_bytes: 0,
-        downloaded_bytes: 0,
-        receiver_connected: false
-      })
+      .insert(insertPayload)
       .select()
       .single();
       
     if (error) {
-      console.error('[SessionManager] Supabase database INSERT error:', error);
-      throw new Error(`Database INSERT failed: ${error.message} (${error.code || 'RLS_OR_SCHEMA_ERROR'})`);
+      console.error('[SessionManager] Supabase INSERT error object:', error);
+      console.error('[SessionManager] Error details:', {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+        payloadKeys: Object.keys(insertPayload)
+      });
+      const errorMsg = error.message || error.details || 'Network/RLS error';
+      const errorCode = error.code ? ` (Code: ${error.code})` : '';
+      throw new Error(`Database INSERT failed: ${errorMsg}${errorCode}`);
     }
     
     console.log('[SessionManager] Session created successfully in database:', session.id);
     return { session, token, error: null };
   } catch (error) {
-    console.error('[SessionManager] Error creating session:', error);
+    console.error('[SessionManager] Full exception during createSession:', error);
+    if (error instanceof TypeError && error.message === 'Failed to fetch') {
+      console.error('[SessionManager] Network connection to Supabase failed. Check if VITE_SUPABASE_URL is correct, reachable, and DNS resolves.');
+    }
     return { session: null, token: null, error };
   }
 }
@@ -85,7 +92,7 @@ export async function getSessionByToken(token) {
     const cleanToken = token.split('#')[0].trim();
     const tokenHash = await hashString(cleanToken);
     
-    if (!isSupabaseConfigured()) {
+    if (!isSupabaseConfigured) {
       return { session: null, error: new Error('Supabase environment variables missing in Vercel.') };
     }
 
@@ -126,7 +133,7 @@ export async function getSessionByToken(token) {
 
 export async function updateSession(sessionId, updates) {
   try {
-    if (!isSupabaseConfigured()) {
+    if (!isSupabaseConfigured) {
       for (const [key, session] of memoryDB.entries()) {
         if (session.id === sessionId) {
           const updated = { ...session, ...updates };
@@ -223,7 +230,7 @@ export async function completeSession(sessionId) {
 export async function findExpiredSessions() {
   try {
     const now = new Date().toISOString();
-    if (!isSupabaseConfigured()) {
+    if (!isSupabaseConfigured) {
       const sessions = Array.from(memoryDB.values()).filter(s => s.expires_at < now);
       return { sessions, error: null };
     }
