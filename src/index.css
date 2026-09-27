@@ -28,6 +28,11 @@
   --radius-md: 14px;
   --radius-lg: 22px;
   --radius-xl: 32px;
+  /* Transition tokens */
+  --transition-fast: 150ms;
+  --transition-base: 250ms;
+  --transition-slow: 400ms;
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .light {
@@ -54,6 +59,11 @@
   html {
     scroll-behavior: smooth;
   }
+  /* Better default button reset */
+  button {
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
 }
 
 @layer utilities {
@@ -62,30 +72,64 @@
   }
 
   .glass-panel {
-
     background: var(--bg-glass);
     backdrop-filter: blur(var(--glass-blur));
     -webkit-backdrop-filter: blur(var(--glass-blur));
     border: 1px solid var(--bg-glass-border);
     border-radius: var(--radius-xl);
   }
+
   .glass-panel-hover:hover {
     background: var(--bg-glass-hover);
     border-color: rgba(255, 255, 255, 0.12);
   }
+
   .text-gradient-portal {
     background: var(--accent-portal);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
   }
+
+  /* Smooth number transitions via tabular-nums */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Custom scrollbar with better visibility */
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 4px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.15);
+  }
+
+  /* Progress bar shimmer effect */
+  .progress-shimmer {
+    position: relative;
+    overflow: hidden;
+  }
+  .progress-shimmer::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
+    animation: shimmer 2s ease-in-out infinite;
+  }
 }
 
-/* Scrollbar */
+/* Global scrollbar */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.15); }
 
 ::selection {
   background: rgba(91, 165, 165, 0.3);
@@ -97,6 +141,7 @@
   outline-offset: 2px;
 }
 
+/* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
   *, ::before, ::after {
     animation-duration: 0.01ms !important;

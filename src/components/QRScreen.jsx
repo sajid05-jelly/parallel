@@ -56,14 +56,14 @@ const QRScreen = ({ transferUrl, fileCount, totalSize, expiryDate, onCopyLink, o
       <GlassCard className="flex flex-col items-center text-center p-6 md:p-8">
         
         <div className="flex items-center gap-2 mb-6">
-          {!isExpired && (
-            <span className="relative flex h-3 w-3">
-              {status === 'WAITING' && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-teal-400 opacity-75"></span>}
-              <span className={`relative inline-flex rounded-full h-3 w-3 ${isConnected ? 'bg-emerald-500' : 'bg-teal-500'}`}></span>
-            </span>
-          )}
-          <span className="text-sm font-medium text-[#9CA3A2]">
-            {isExpired ? 'Portal closed' : isConnected ? 'Direct LAN Connected' : mode === 'nearby' ? 'Waiting for nearby device...' : 'Portal is open'}
+          <span className="relative flex h-3 w-3">
+            {!isExpired && status === 'WAITING' && (
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#5BA5A5] opacity-75"></span>
+            )}
+            <span className={`relative inline-flex rounded-full h-3 w-3 ${isExpired ? 'bg-[#6B7280]' : isConnected ? 'bg-emerald-500' : 'bg-[#5BA5A5]'}`}></span>
+          </span>
+          <span className={`text-sm font-medium ${isExpired ? 'text-[#6B7280] line-through' : 'text-[#9CA3A2]'}`}>
+            {isExpired ? 'Portal closed' : isConnected ? 'Device connected' : mode === 'nearby' ? 'Waiting for nearby device...' : 'Portal is open'}
           </span>
         </div>
 
@@ -72,16 +72,16 @@ const QRScreen = ({ transferUrl, fileCount, totalSize, expiryDate, onCopyLink, o
             <h3 className="text-xl text-[#F5F5F2] mb-2 font-light">Portal expired. No one connected.</h3>
             <button 
               onClick={onCancel}
-              className="mt-6 px-6 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-[#F5F5F2] text-sm font-medium transition-colors"
+              className="mt-6 px-6 py-2.5 rounded-xl bg-white/[0.06] border border-white/[0.1] hover:bg-white/[0.1] hover:border-white/[0.15] text-[#F5F5F2] text-sm font-medium transition-colors"
             >
               Create another portal
             </button>
           </div>
         ) : (
           <>
-            <div className="relative mb-6">
-              <div className="absolute inset-0 rounded-2xl bg-[#5BA5A5]/20 blur-xl animate-pulse"></div>
-              <div className="relative bg-white p-3 rounded-2xl shadow-xl flex items-center justify-center min-w-[244px] min-h-[244px]" ref={containerRef}>
+            <div className="relative mb-6 flex items-center justify-center p-1 overflow-hidden rounded-[20px]">
+              <div className="absolute inset-0 bg-[conic-gradient(from_0deg,#5BA5A5,#D4A574,#5BA5A5)] opacity-20 animate-[spin_8s_linear_infinite]"></div>
+              <div className="relative bg-white p-3 rounded-2xl shadow-xl flex items-center justify-center min-w-[244px] min-h-[244px] z-10" ref={containerRef}>
               </div>
             </div>
 
@@ -95,23 +95,34 @@ const QRScreen = ({ transferUrl, fileCount, totalSize, expiryDate, onCopyLink, o
             <div className="w-full bg-white/[0.04] rounded-xl p-3 mb-6 border border-white/[0.08]">
               <p className="text-sm text-[#9CA3A2]">
                 {mode === 'nearby' ? 'Connect both devices to same Wi-Fi' : 'Portal closes in '} 
-                <span className="text-[#5BA5A5] font-mono font-medium">
+                <span className={`font-mono tabular-nums font-medium ${remaining < 10 ? 'text-red-400' : remaining < 30 ? 'text-amber-400' : 'text-[#5BA5A5]'}`}>
                   {mode === 'nearby' ? '' : formatDuration(remaining)}
                 </span>
               </p>
             </div>
 
-
             <div className="flex flex-col sm:flex-row gap-3 w-full">
               <button
                 onClick={handleCopy}
-                className="flex-1 py-2.5 rounded-xl border border-white/20 hover:bg-white/10 text-[#F5F5F2] text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                className={`flex-1 py-2.5 rounded-xl bg-white/[0.06] border border-white/[0.1] hover:bg-white/[0.1] hover:border-white/[0.15] text-sm font-medium transition-colors flex items-center justify-center gap-2 ${copied ? 'text-[#5BA5A5]' : 'text-[#F5F5F2]'}`}
               >
-                {copied ? 'Copied!' : 'Copy Link'}
+                {copied ? (
+                  <>
+                    <span>✓ Copied</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                    </svg>
+                    Copy Link
+                  </>
+                )}
               </button>
               <button
                 onClick={onCancel}
-                className="flex-1 py-2.5 rounded-xl text-[#9CA3A2] hover:text-[#F5F5F2] text-sm font-medium transition-colors"
+                className="flex-1 py-2.5 rounded-xl text-[#6B7280] hover:text-[#F5F5F2] text-sm font-medium transition-colors"
               >
                 Cancel Portal
               </button>
@@ -131,7 +142,5 @@ const QRScreen = ({ transferUrl, fileCount, totalSize, expiryDate, onCopyLink, o
     </div>
   );
 };
-
-
 
 export default QRScreen;

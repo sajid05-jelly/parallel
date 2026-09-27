@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import SenderPage from './pages/SenderPage';
 import ReceiverPage from './pages/ReceiverPage';
+import { ToastProvider } from './components/Toast';
 
 function getRoute() {
   const path = window.location.pathname;
@@ -27,13 +28,15 @@ function App() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-background text-primary font-sans antialiased selection:bg-accent/30 selection:text-white">
-      {route.page === 'receive' ? (
-        <ReceiverPage token={route.token} keyString={route.keyString} />
-      ) : (
-        <SenderPage />
-      )}
-    </div>
+    <ToastProvider>
+      <div className="min-h-screen bg-background text-primary font-sans antialiased selection:bg-accent/30 selection:text-white">
+        {route.page === 'receive' ? (
+          <ReceiverPage token={route.token} keyString={route.keyString} />
+        ) : (
+          <SenderPage />
+        )}
+      </div>
+    </ToastProvider>
   );
 }
 

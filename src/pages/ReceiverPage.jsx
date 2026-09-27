@@ -48,7 +48,51 @@ function FileDownloadItem({ file, onDownload }) {
   );
 }
 
+
+function CategorySection({ title, emoji, items, onDownloadAll, onDownloadItem, zippingCategory }) {
+  if (!items || items.length === 0) return null;
+  
+  const isZipping = zippingCategory === title;
+
+  return (
+    <div className="mb-8 w-full">
+      <div className="flex items-center justify-between mb-3 border-b border-white/[0.08] pb-2">
+        <h3 className="text-[#F3F4F6] font-semibold tracking-wide text-[13px] flex items-center gap-2 uppercase">
+          <span>{emoji}</span> {title}
+        </h3>
+        <span className="text-[#9CA3AF] text-xs font-medium">{items.length} {items.length === 1 ? title.toLowerCase().replace(/s$/, '') : title.toLowerCase()}</span>
+      </div>
+      
+      <div className="bg-white/[0.02] border border-white/[0.04] rounded-xl p-2.5 space-y-2 mb-3">
+        {items.map(item => (
+          <FileDownloadItem
+            key={item.idx}
+            file={item.file}
+            onDownload={() => onDownloadItem(item.idx)}
+          />
+        ))}
+      </div>
+      
+      <button
+        onClick={() => onDownloadAll(title, items)}
+        disabled={isZipping}
+        className="w-full py-2.5 rounded-lg bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-[#E5E7EB] hover:text-white font-medium text-[13px] transition-all disabled:opacity-50 flex justify-center items-center gap-2"
+      >
+        {isZipping ? (
+          <>
+            <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+            Zipping...
+          </>
+        ) : (
+          `Download All ${title}`
+        )}
+      </button>
+    </div>
+  );
+}
+
 const initializedPortals = new Set();
+
 
 export default function ReceiverPage({ token, keyString }) {
 
@@ -62,6 +106,66 @@ export default function ReceiverPage({ token, keyString }) {
     getCompletedFileBlob,
     saveFileItem,
   } = useReceiver();
+
+  const [zippingCategory, setZippingCategory] = useState(null);
+
+  const handleDownloadAll = useCallback(async (categoryName, items) => {
+    if (items.length === 0) return;
+    if (items.length === 1) {
+      return downloadFile(items[0].idx);
+    }
+    
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    
+    if (isIOS) {
+      const totalSize = items.reduce((acc, item) => acc + (item.file.size || 0), 0);
+      if (totalSize > 800 * 1024 * 1024) {
+        alert('Files are too large to ZIP on iOS. Please download them individually.');
+        return;
+      }
+      
+      try {
+        setZippingCategory(categoryName);
+        const { zip } = await import('fflate');
+        const zipData = {};
+        for (const item of items) {
+          const blobData = getCompletedFileBlob(item.idx);
+          if (blobData && blobData.blob) {
+            const arrayBuffer = await blobData.blob.arrayBuffer();
+            zipData[blobData.filename] = new Uint8Array(arrayBuffer);
+          }
+        }
+        
+        await new Promise((resolve, reject) => {
+          zip(zipData, { level: 0 }, (err, zipped) => {
+            if (err) return reject(err);
+            const blob = new Blob([zipped], { type: 'application/zip' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${categoryName}_PARALLEL.zip`;
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 60000);
+            resolve();
+          });
+        });
+      } catch (err) {
+        console.error('ZIP creation failed:', err);
+        alert('Failed to create ZIP file.');
+      } finally {
+        setZippingCategory(null);
+      }
+    } else {
+      // Desktop/Android: Sequential native downloads
+      for (const item of items) {
+        await downloadFile(item.idx);
+        await new Promise(r => setTimeout(r, 300));
+      }
+    }
+  }, [getCompletedFileBlob]);
 
   // Called when the user taps Download for a specific file index
   const downloadFile = useCallback(async (idx) => {
@@ -134,12 +238,14 @@ export default function ReceiverPage({ token, keyString }) {
       <ParallelBackground />
       
       <header className="absolute top-0 left-0 w-full p-4 sm:p-6 z-20 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="9" cy="12" r="6" stroke="#D4A574" strokeWidth="2" strokeOpacity="0.8"/>
-            <circle cx="15" cy="12" r="6" stroke="#5BA5A5" strokeWidth="2" strokeOpacity="0.8"/>
-          </svg>
-          <span className="text-sm font-semibold tracking-[0.25em] uppercase text-[#F5F5F2]">
+        <div className="flex items-center gap-2.5 group">
+          <div className="relative flex items-center justify-center transition-all duration-300 group-hover:drop-shadow-[0_0_8px_rgba(91,165,165,0.4)]">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="8" cy="12" r="6" stroke="#D4A574" strokeWidth="2.2" strokeOpacity="0.9"/>
+              <circle cx="16" cy="12" r="6" stroke="#5BA5A5" strokeWidth="2.2" strokeOpacity="0.9"/>
+            </svg>
+          </div>
+          <span className="font-space text-sm font-bold tracking-[0.22em] text-[#F5F5F2] uppercase group-hover:text-[#5BA5A5] transition-all duration-300 group-hover:[text-shadow:0_0_8px_rgba(91,165,165,0.3)]">
             PARALLEL
           </span>
         </div>
@@ -168,12 +274,12 @@ export default function ReceiverPage({ token, keyString }) {
               <GlassCard className="flex flex-col p-8 rounded-[24px]">
                 <div className="flex flex-col items-center justify-center text-center">
                   <h2 className="text-[15px] font-medium text-[#F3F4F6] tracking-wide mb-2">Connecting portal...</h2>
-                  <p className="text-[13px] text-[#9CA3AF] mb-10">Establishing secure peer connection</p>
+                  <p className="text-[13px] text-[#9CA3AF] mb-10">Establishing secure connection...</p>
                   
                   <div className="w-full relative flex items-center justify-between px-2 mb-2">
                     {/* Source Node (Laptop) */}
-                    <div className="w-10 h-10 rounded-full border border-white/[0.08] bg-white/[0.02] flex items-center justify-center z-10 shadow-[0_4px_15px_rgba(0,0,0,0.2)]">
-                      <svg className="w-4 h-4 text-[#9CA3AF]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                    <div className="w-12 h-12 rounded-xl border border-white/[0.12] bg-white/[0.04] flex items-center justify-center z-10 shadow-[0_4px_20px_rgba(0,0,0,0.3)] backdrop-blur-md">
+                      <svg className="w-5 h-5 text-[#F5F5F2]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="1.5">
                         <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
                         <line x1="8" y1="21" x2="16" y2="21"></line>
                         <line x1="12" y1="17" x2="12" y2="21"></line>
@@ -192,8 +298,8 @@ export default function ReceiverPage({ token, keyString }) {
                     </div>
 
                     {/* Dest Node (Phone) */}
-                    <div className="w-10 h-10 rounded-full border border-white/[0.08] bg-white/[0.02] flex items-center justify-center z-10 shadow-[0_4px_15px_rgba(0,0,0,0.2)]">
-                      <svg className="w-4 h-4 text-[#9CA3AF]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                    <div className="w-12 h-12 rounded-xl border border-white/[0.12] bg-white/[0.04] flex items-center justify-center z-10 shadow-[0_4px_20px_rgba(0,0,0,0.3)] backdrop-blur-md">
+                      <svg className="w-5 h-5 text-[#F5F5F2]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="1.5">
                         <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
                         <line x1="12" y1="18" x2="12.01" y2="18"></line>
                       </svg>
@@ -246,13 +352,10 @@ export default function ReceiverPage({ token, keyString }) {
                 <div className="mt-auto pt-4 border-t border-white/[0.08]">
                   <button
                     onClick={acceptTransfer}
-                    className="relative overflow-hidden w-full min-h-[52px] py-3.5 rounded-xl bg-gradient-to-r from-[#5BA5A5]/10 via-[#D4A574]/10 to-[#5BA5A5]/10 border border-[#5BA5A5]/20 backdrop-blur-md text-[#F3F4F6] font-medium text-[13px] uppercase tracking-widest hover:border-[#D4A574]/40 hover:bg-white/[0.05] hover:shadow-[0_0_20px_rgba(212,165,116,0.15)] active:scale-[0.98] transition-all duration-300 flex items-center justify-center group"
+                    className="w-full min-h-[52px] py-3.5 rounded-xl bg-white text-[#090A0A] font-semibold text-[13px] uppercase tracking-widest hover:bg-white/90 active:scale-[0.98] transition-all duration-200 flex items-center justify-center group"
                   >
-                    {/* Crystal inner reflection */}
-                    <div className="absolute inset-0 bg-gradient-to-b from-white/[0.08] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none rounded-xl"></div>
-                    
-                    <span className="relative z-10 flex items-center justify-center gap-2.5">
-                      <svg className="text-[#5BA5A5] group-hover:translate-y-[1px] transition-transform duration-300" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <span className="flex items-center justify-center gap-2.5">
+                      <svg className="text-[#5BA5A5] group-hover:translate-y-[1px] transition-transform duration-200" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                         <polyline points="7 10 12 15 17 10"></polyline>
                         <line x1="12" y1="15" x2="12" y2="3"></line>
@@ -293,30 +396,76 @@ export default function ReceiverPage({ token, keyString }) {
                   initial={{ scale: 0 }}
                   animate={{ scale: 1 }}
                   transition={{ type: "spring", bounce: 0.5, delay: 0.2 }}
-                  className="w-20 h-20 rounded-full bg-teal-500/10 flex items-center justify-center mb-6"
+                  className="relative w-20 h-20 mx-auto mb-6 z-10"
                 >
-                  <svg className="w-10 h-10 text-[#5BA5A5]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
+                  <div className="absolute inset-0 rounded-full border-2 border-[#5BA5A5]/30 animate-[ping_2s_cubic-bezier(0,0,0.2,1)_infinite]"></div>
+                  <div className="w-full h-full bg-[#5BA5A5]/10 text-[#5BA5A5] rounded-full flex items-center justify-center shadow-[0_0_30px_rgba(91,165,165,0.2)] border border-[#5BA5A5]/20">
+                    <svg className="w-10 h-10 text-[#5BA5A5]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </div>
                 </motion.div>
                 <h2 className="text-3xl font-light mb-2 text-[#F5F5F2]">Transfer Complete</h2>
-                <p className="text-[#9CA3A2] text-sm mb-4">{files.length} {files.length === 1 ? 'file' : 'files'} received &amp; verified.</p>
+                <p className="text-[#9CA3A2] text-sm mb-4">{files.length} {files.length === 1 ? 'file' : 'files'} &middot; {formatFileSize(totalSize)} received &amp; verified.</p>
                 
-                <div className="w-full max-h-56 overflow-y-auto space-y-2.5 mb-6 text-left">
-                  {files.map((file, idx) => (
-                    <FileDownloadItem
-                      key={idx}
-                      file={file}
-                      onDownload={() => downloadFile(idx)}
-                    />
-                  ))}
+                <div className="w-full max-h-[60vh] overflow-y-auto mb-6 text-left custom-scrollbar pr-2">
+                  {(() => {
+                    const photos = [];
+                    const videos = [];
+                    const otherFiles = [];
+
+                    files.forEach((file, idx) => {
+                      const mime = (file.type || '').toLowerCase();
+                      const name = (file.name || '').toLowerCase();
+                      
+                      const isPhoto = mime.startsWith('image/') || /\.(jpeg|jpg|png|webp|gif|heic|heif|bmp|svg|tiff)$/i.test(name);
+                      const isVideo = mime.startsWith('video/') || /\.(mp4|mov|webm|mkv|avi|m4v|3gp|wmv|flv)$/i.test(name);
+                      
+                      if (isPhoto) {
+                        photos.push({ file, idx });
+                      } else if (isVideo) {
+                        videos.push({ file, idx });
+                      } else {
+                        otherFiles.push({ file, idx });
+                      }
+                    });
+
+                    return (
+                      <>
+                        <CategorySection 
+                          title="Photos" 
+                          emoji="📸" 
+                          items={photos} 
+                          onDownloadAll={handleDownloadAll} 
+                          onDownloadItem={downloadFile} 
+                          zippingCategory={zippingCategory}
+                        />
+                        <CategorySection 
+                          title="Videos" 
+                          emoji="🎥" 
+                          items={videos} 
+                          onDownloadAll={handleDownloadAll} 
+                          onDownloadItem={downloadFile} 
+                          zippingCategory={zippingCategory}
+                        />
+                        <CategorySection 
+                          title="Files" 
+                          emoji="📁" 
+                          items={otherFiles} 
+                          onDownloadAll={handleDownloadAll} 
+                          onDownloadItem={downloadFile} 
+                          zippingCategory={zippingCategory}
+                        />
+                      </>
+                    );
+                  })()}
                 </div>
 
                 <button 
                   onClick={() => window.location.href = '/'}
-                  className="w-full py-3 rounded-xl bg-white/10 hover:bg-white/20 text-[#F5F5F2] font-medium text-sm transition-colors"
+                  className="w-full py-3 rounded-xl bg-white/[0.06] border border-white/[0.1] hover:bg-white/[0.1] hover:border-white/[0.15] text-[#F5F5F2] font-medium transition-all duration-200 active:scale-[0.98]"
                 >
-                  Done
+                  Back to Home
                 </button>
 
               </GlassCard>

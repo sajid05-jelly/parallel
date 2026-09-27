@@ -10,7 +10,7 @@ const PortalAnimation = ({ stage = 'closed', progress = 0 }) => {
   return (
     <div className="relative flex items-center justify-center w-[150px] h-[150px] md:w-[200px] md:h-[200px] mx-auto">
       {/* Background glow */}
-      <div className={`absolute inset-0 rounded-full bg-indigo-500/10 blur-xl transition-opacity duration-1000 ${isOpen ? 'opacity-100' : 'opacity-0'}`}></div>
+      <div className={`absolute inset-0 rounded-full bg-[#5BA5A5]/10 blur-xl transition-opacity duration-1000 ${isOpen ? 'opacity-100' : 'opacity-0'}`}></div>
 
       <AnimatePresence>
         {(isOpening || isOpen) && (
@@ -29,7 +29,7 @@ const PortalAnimation = ({ stage = 'closed', progress = 0 }) => {
                 opacity: { duration: 1.5 },
                 rotate: { duration: 20, repeat: Infinity, ease: 'linear' }
               }}
-              className="absolute inset-0 rounded-full border-[1px] border-dashed border-blue-500/50"
+              className="absolute inset-0 rounded-full border-[1px] border-dashed border-[#5BA5A5]/50"
             />
             
             {/* Middle Ring */}
@@ -46,7 +46,7 @@ const PortalAnimation = ({ stage = 'closed', progress = 0 }) => {
                 opacity: { duration: 1.2, delay: 0.2 },
                 rotate: { duration: 15, repeat: Infinity, ease: 'linear' }
               }}
-              className="absolute inset-4 rounded-full border-2 border-indigo-500/60"
+              className="absolute inset-4 rounded-full border-2 border-[#5BA5A5]/60"
             />
 
             {/* Inner Ring */}
@@ -61,7 +61,7 @@ const PortalAnimation = ({ stage = 'closed', progress = 0 }) => {
                 scale: { duration: 1, ease: 'easeOut', delay: 0.4 },
                 opacity: { duration: 1, delay: 0.4 },
               }}
-              className="absolute inset-8 rounded-full border-4 border-violet-500 shadow-[0_0_30px_rgba(139,92,246,0.5)]"
+              className="absolute inset-8 rounded-full border-4 border-[#D4A574] shadow-[0_0_30px_rgba(212,165,116,0.5)]"
             />
             
             {/* Center Core */}
@@ -75,7 +75,7 @@ const PortalAnimation = ({ stage = 'closed', progress = 0 }) => {
               transition={{ 
                 scale: isOpen ? { duration: 2, repeat: Infinity, ease: 'easeInOut' } : { duration: 0.8, delay: 0.6 }
               }}
-              className="absolute inset-12 rounded-full bg-gradient-to-tr from-violet-500 to-blue-500 blur-sm"
+              className="absolute inset-12 rounded-full bg-gradient-to-tr from-[#D4A574] to-[#5BA5A5] blur-sm"
             />
           </>
         )}

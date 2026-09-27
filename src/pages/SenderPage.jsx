@@ -5,10 +5,10 @@ import ParallelBackground from '../components/ParallelBackground';
 import Navbar from '../components/Navbar';
 import UploadPortal from '../components/UploadPortal';
 import FileList from '../components/FileList';
-
 import QRScreen from '../components/QRScreen';
 import TransferProgress from '../components/TransferProgress';
 import ErrorState from '../components/ErrorState';
+import { formatFileSize } from '../config/constants';
 
 
 export default function SenderPage() {
@@ -81,10 +81,10 @@ export default function SenderPage() {
                 Direct P2P File Transfer
               </span>
               <h1 className="text-4xl md:text-[44px] font-semibold text-[#F3F4F6] leading-tight tracking-tight mb-4">
-                Choose transfer mode
+                Send files instantly
               </h1>
               <p className="text-[15px] text-[#6B7280] max-w-md mx-auto leading-relaxed">
-                Select the fastest route based on your current network environment.
+                Choose the fastest route for your transfer
               </p>
             </div>
 
@@ -96,7 +96,7 @@ export default function SenderPage() {
               >
                 <div className="absolute inset-0 bg-gradient-to-b from-[#D4A574]/[0.05] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none rounded-[24px]"></div>
                 <div className="flex items-center justify-between mb-5 relative z-10">
-                  <div className="w-10 h-10 rounded-full bg-[#D4A574]/15 flex items-center justify-center border border-[#D4A574]/30 shadow-[0_0_15px_rgba(212,165,116,0.15)]">
+                  <div className="w-11 h-11 rounded-full bg-[#D4A574]/15 flex items-center justify-center border border-[#D4A574]/30 shadow-[0_0_15px_rgba(212,165,116,0.15)]">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#D4A574" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
                   </div>
                   <span className="text-[10px] font-medium tracking-wider px-2.5 py-1 rounded-full bg-[#D4A574]/10 border border-[#D4A574]/20 text-[#D4A574] uppercase">
@@ -109,9 +109,9 @@ export default function SenderPage() {
                 <p className="text-[13.5px] text-[#9CA3AF] leading-relaxed mb-5 flex-grow relative z-10">
                   Connect both devices to the same Wi-Fi for instant local network transfer.
                 </p>
-                <div className="pt-4 border-t border-white/[0.05] flex items-center gap-4 text-[12px] text-[#6B7280] relative z-10">
-                  <span className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-[#6B7280]"></div> Same Wi-Fi</span>
-                  <span className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-[#6B7280]"></div> P2P Direct</span>
+                <div className="pt-4 border-t border-white/[0.08] flex items-center justify-between text-[12px] text-[#6B7280] relative z-10">
+                  <span className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-[#D4A574]/80"></div>Same Wi-Fi</span>
+                  <span className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-[#D4A574]/80"></div>P2P Direct</span>
                 </div>
               </button>
 
@@ -122,7 +122,7 @@ export default function SenderPage() {
               >
                 <div className="absolute inset-0 bg-gradient-to-b from-[#5BA5A5]/[0.05] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none rounded-[24px]"></div>
                 <div className="flex items-center justify-between mb-5 relative z-10">
-                  <div className="w-10 h-10 rounded-full bg-[#5BA5A5]/15 flex items-center justify-center border border-[#5BA5A5]/30 shadow-[0_0_15px_rgba(91,165,165,0.15)]">
+                  <div className="w-11 h-11 rounded-full bg-[#5BA5A5]/15 flex items-center justify-center border border-[#5BA5A5]/30 shadow-[0_0_15px_rgba(91,165,165,0.15)]">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5BA5A5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
                   </div>
                   <span className="text-[10px] font-medium tracking-wider px-2.5 py-1 rounded-full bg-[#5BA5A5]/10 border border-[#5BA5A5]/20 text-[#5BA5A5] uppercase">
@@ -135,12 +135,16 @@ export default function SenderPage() {
                 <p className="text-[13.5px] text-[#9CA3AF] leading-relaxed mb-5 flex-grow relative z-10">
                   Send securely across different networks, mobile data, or anywhere in the world.
                 </p>
-                <div className="pt-4 border-t border-white/[0.05] flex items-center gap-4 text-[12px] text-[#6B7280] relative z-10">
-                  <span className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-[#6B7280]"></div> Any Network</span>
-                  <span className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-[#6B7280]"></div> Encrypted</span>
+                <div className="pt-4 border-t border-white/[0.08] flex items-center justify-between text-[12px] text-[#6B7280] relative z-10">
+                  <span className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-[#5BA5A5]/80"></div>Any Network</span>
+                  <span className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-[#5BA5A5]/80"></div>Encrypted</span>
                 </div>
               </button>
             </div>
+            
+            <p className="text-[12px] text-[#5C6462] tracking-wide mt-4">
+              End-to-end encrypted &middot; No cloud storage &middot; Up to 10 GB
+            </p>
           </motion.div>
         );
       }
@@ -159,14 +163,14 @@ export default function SenderPage() {
             <div className="max-w-xl mx-auto mb-8 relative">
               <button
                 onClick={() => setMode(null)}
-                className="absolute -top-12 left-0 text-[13px] text-[#9CA3AF] hover:text-[#F3F4F6] flex items-center gap-2 transition-colors"
+                className="absolute -top-12 left-0 text-[13px] text-[#9CA3AF] hover:text-[#F3F4F6] flex items-center gap-2 transition-colors bg-white/[0.04] rounded-lg px-3 py-1.5 hover:bg-white/[0.08]"
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
                 Back to Modes
               </button>
               
               <h1 className="text-3xl md:text-[36px] font-semibold text-[#F3F4F6] leading-tight tracking-tight mb-2">
-                Share files securely
+                Select your files
               </h1>
               <p className="text-[14.5px] text-[#9CA3AF] leading-relaxed">
                 {mode === 'nearby' 
@@ -259,15 +263,23 @@ export default function SenderPage() {
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0 }}
-          className="text-center p-8 max-w-md mx-auto bg-gradient-to-b from-white/[0.05] to-white/[0.01] border border-white/[0.08] backdrop-blur-2xl rounded-[24px] shadow-[0_8px_32px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.08)] relative overflow-hidden"
+          className="text-center p-8 max-w-md mx-auto bg-gradient-to-b from-white/[0.04] to-white/[0.01] border border-white/[0.08] backdrop-blur-2xl rounded-[24px] shadow-[0_8px_32px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.08)] relative overflow-hidden"
         >
           <div className="absolute inset-0 bg-gradient-to-b from-[#5BA5A5]/[0.05] to-transparent opacity-100 pointer-events-none rounded-[24px]"></div>
-          <div className="w-16 h-16 mx-auto bg-teal-500/10 text-teal-400 rounded-full flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(91,165,165,0.2)] border border-teal-500/20 relative z-10">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          
+          <div className="relative w-20 h-20 mx-auto mb-6 z-10">
+            <div className="absolute inset-0 rounded-full border-2 border-[#5BA5A5]/30 animate-[ping_2s_cubic-bezier(0,0,0.2,1)_infinite]"></div>
+            <div className="w-full h-full bg-[#5BA5A5]/10 text-[#5BA5A5] rounded-full flex items-center justify-center shadow-[0_0_30px_rgba(91,165,165,0.2)] border border-[#5BA5A5]/20">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            </div>
           </div>
+          
           <h2 className="text-2xl font-semibold text-[#F3F4F6] mb-2 tracking-tight relative z-10">Transfer complete</h2>
-          <p className="text-[14px] text-[#9CA3AF] mb-8 leading-relaxed relative z-10">Your files have been securely transferred and saved on the receiver device.</p>
-          <button onClick={reset} className="w-full py-3 bg-white text-black font-medium rounded-xl hover:bg-gray-100 transition-colors shadow-[0_2px_10px_rgba(255,255,255,0.1)] relative z-10">
+          <p className="text-[14px] text-[#9CA3AF] mb-8 leading-relaxed relative z-10">
+            Your files have been securely transferred and saved on the receiver device.<br />
+            <span className="text-[#6B7280] text-[13px] mt-2 block">{files.length} {files.length === 1 ? 'file' : 'files'} &middot; {formatFileSize(totalSize)}</span>
+          </p>
+          <button onClick={reset} className="w-full py-3 bg-white/[0.06] border border-white/[0.1] hover:bg-white/[0.1] hover:border-white/[0.15] text-[#F5F5F2] font-medium rounded-xl transition-all duration-200 active:scale-[0.98] relative z-10">
             Send More Files
           </button>
         </motion.div>
