@@ -29,7 +29,7 @@ function App() {
 
   return (
     <ToastProvider>
-      <div className="min-h-screen bg-background text-primary font-sans antialiased selection:bg-accent/30 selection:text-white">
+      <div className="min-h-screen text-[#F5F5F2] font-sans antialiased selection:bg-[#5BA5A5]/30 selection:text-white">
         {route.page === 'receive' ? (
           <ReceiverPage token={route.token} keyString={route.keyString} />
         ) : (

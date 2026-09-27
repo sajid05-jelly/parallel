@@ -234,7 +234,7 @@ export default function ReceiverPage({ token, keyString }) {
   const totalSize = files.reduce((acc, f) => acc + (f.size || 0), 0);
 
   return (
-    <div className="min-h-[100dvh] flex flex-col bg-[#090A0A] text-[#F5F5F2] overflow-hidden relative">
+    <div className="min-h-[100dvh] flex flex-col text-[#F5F5F2] overflow-hidden relative">
       <ParallelBackground />
       
       <header className="absolute top-0 left-0 w-full p-4 sm:p-6 z-20 flex items-center justify-between">
