@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTransfer } from '../hooks/useTransfer';
 import ParallelBackground from '../components/ParallelBackground';
@@ -12,6 +12,7 @@ import { formatFileSize } from '../config/constants';
 
 
 export default function SenderPage() {
+  const [showModeSelection, setShowModeSelection] = useState(false);
   const {
     status,
     files,
@@ -67,25 +68,100 @@ export default function SenderPage() {
   const renderContent = () => {
     if (status === 'IDLE' || status === 'UPLOADING') {
       // Step 1: Mode Selection (Nearby ⚡ vs Anywhere 🌐)
+      // Step 1: Home / Mode Selection
       if (!mode) {
+        if (!showModeSelection) {
+          return (
+            <motion.div
+              key="home-selection"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.3 }}
+              className="w-full max-w-3xl mx-auto text-center"
+            >
+              <div className="mb-12">
+                <span className="text-[11px] font-medium tracking-widest text-[#9CA3AF] uppercase mb-4 inline-block">
+                  Direct P2P File Transfer
+                </span>
+                <h1 className="text-4xl md:text-[44px] font-semibold text-[#F3F4F6] leading-tight tracking-tight mb-4">
+                  Welcome to PARALLEL
+                </h1>
+                <p className="text-[15px] text-[#6B7280] max-w-md mx-auto leading-relaxed">
+                  Fast, secure, and unlimited file sharing across any device.
+                </p>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-5 max-w-2xl mx-auto mb-8">
+                {/* SEND FILES */}
+                <button
+                  onClick={() => setShowModeSelection(true)}
+                  className="flex-1 group p-8 rounded-[24px] bg-gradient-to-b from-white/[0.04] to-white/[0.01] hover:from-white/[0.06] hover:to-white/[0.02] backdrop-blur-xl border border-white/[0.08] hover:border-[#5BA5A5]/30 shadow-[0_8px_32px_rgba(0,0,0,0.4)] transition-all duration-300 text-center flex flex-col items-center justify-center relative overflow-hidden min-h-[220px]"
+                >
+                  <div className="absolute inset-0 bg-gradient-to-b from-[#5BA5A5]/[0.05] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"></div>
+                  
+                  <div className="w-16 h-16 rounded-full bg-[#5BA5A5]/15 flex items-center justify-center border border-[#5BA5A5]/30 shadow-[0_0_20px_rgba(91,165,165,0.15)] mb-6 group-hover:scale-110 group-hover:-translate-y-1 transition-all duration-300 relative z-10">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#5BA5A5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
+                  </div>
+                  
+                  <h3 className="text-xl font-semibold text-[#F3F4F6] mb-2 group-hover:text-white transition-colors tracking-wide relative z-10">
+                    SEND FILES
+                  </h3>
+                  <p className="text-sm text-[#9CA3AF] relative z-10">
+                    Send files to another device
+                  </p>
+                </button>
+
+                {/* RECEIVE FILES */}
+                <button
+                  onClick={() => { window.location.href = '/receive'; }}
+                  className="flex-1 group p-8 rounded-[24px] bg-gradient-to-b from-white/[0.04] to-white/[0.01] hover:from-white/[0.06] hover:to-white/[0.02] backdrop-blur-xl border border-white/[0.08] hover:border-[#D4A574]/30 shadow-[0_8px_32px_rgba(0,0,0,0.4)] transition-all duration-300 text-center flex flex-col items-center justify-center relative overflow-hidden min-h-[220px]"
+                >
+                  <div className="absolute inset-0 bg-gradient-to-b from-[#D4A574]/[0.05] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"></div>
+                  
+                  <div className="w-16 h-16 rounded-full bg-[#D4A574]/15 flex items-center justify-center border border-[#D4A574]/30 shadow-[0_0_20px_rgba(212,165,116,0.15)] mb-6 group-hover:scale-110 group-hover:-translate-y-1 transition-all duration-300 relative z-10">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#D4A574" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><polyline points="19 12 12 19 5 12"></polyline></svg>
+                  </div>
+                  
+                  <h3 className="text-xl font-semibold text-[#F3F4F6] mb-2 group-hover:text-white transition-colors tracking-wide relative z-10">
+                    RECEIVE FILES
+                  </h3>
+                  <p className="text-sm text-[#9CA3AF] relative z-10">
+                    Receive files from another device
+                  </p>
+                </button>
+              </div>
+            </motion.div>
+          );
+        }
+
+        // The "Send Files" mode selection screen
         return (
           <motion.div
             key="mode-selection"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
             transition={{ duration: 0.3 }}
-            className="w-full max-w-2xl mx-auto text-center"
+            className="w-full max-w-2xl mx-auto text-center relative"
           >
-            <div className="mb-12">
+            <button
+              onClick={() => setShowModeSelection(false)}
+              className="absolute -top-12 left-0 text-[13px] text-[#9CA3AF] hover:text-[#F3F4F6] flex items-center gap-2 transition-colors bg-white/[0.04] rounded-lg px-3 py-1.5 hover:bg-white/[0.08]"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+              Back
+            </button>
+
+            <div className="mb-12 mt-4">
               <span className="text-[11px] font-medium tracking-widest text-[#9CA3AF] uppercase mb-4 inline-block">
-                Direct P2P File Transfer
+                Select Network Route
               </span>
               <h1 className="text-4xl md:text-[44px] font-semibold text-[#F3F4F6] leading-tight tracking-tight mb-4">
-                Send files instantly
+                Choose how to send
               </h1>
               <p className="text-[15px] text-[#6B7280] max-w-md mx-auto leading-relaxed">
-                Choose the fastest route for your transfer
+                Pick the best route for your transfer
               </p>
             </div>
 
@@ -146,18 +222,6 @@ export default function SenderPage() {
             <p className="text-[12px] text-[#5C6462] tracking-wide mt-4">
               End-to-end encrypted &middot; No cloud storage &middot; Unlimited size
             </p>
-
-            <button
-              onClick={() => { window.location.href = '/receive'; }}
-              className="mt-6 px-5 py-2 rounded-xl bg-white/[0.04] border border-white/[0.08] hover:bg-white/[0.07] hover:border-white/[0.12] text-[13px] text-[#9CA3A2] hover:text-[#F5F5F2] font-medium transition-all flex items-center gap-2"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                <polyline points="7 10 12 15 17 10"></polyline>
-                <line x1="12" y1="15" x2="12" y2="3"></line>
-              </svg>
-              Receive Files
-            </button>
           </motion.div>
         );
       }
