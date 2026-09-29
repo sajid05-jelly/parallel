@@ -21,23 +21,15 @@ const UploadPortal = ({ onFilesSelected, disabled = false }) => {
     if (disabled) return;
     
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      // Extract array immediately before the drag event unmounts/invalidates the dataTransfer object
       const filesArray = Array.from(e.dataTransfer.files);
-      setTimeout(() => {
-        onFilesSelected(filesArray);
-      }, 0);
+      onFilesSelected(filesArray);
     }
   };
 
   const handleFileInputChange = (e) => {
     if (e.target.files && e.target.files.length > 0) {
-      // Must convert live FileList to Array BEFORE clearing the input,
-      // otherwise the browser clears the files before the timeout fires!
       const filesArray = Array.from(e.target.files);
-      
-      setTimeout(() => {
-        onFilesSelected(filesArray);
-      }, 0);
+      onFilesSelected(filesArray);
     }
     // Reset so same file can be selected again
     e.target.value = '';
