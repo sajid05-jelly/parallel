@@ -94,42 +94,68 @@ export default function SenderPage() {
 
               <div className="flex flex-col sm:flex-row gap-5 max-w-2xl mx-auto mb-8">
                 {/* SEND FILES */}
-                <button
+                <motion.button
+                  whileHover={{ y: -4 }}
+                  whileTap={{ scale: 0.98 }}
+                  transition={{ duration: 0.4, ease: [0.23, 1, 0.32, 1] }}
                   onClick={() => setShowModeSelection(true)}
-                  className="flex-1 group p-8 rounded-[24px] bg-gradient-to-b from-white/[0.04] to-white/[0.01] hover:from-white/[0.06] hover:to-white/[0.02] backdrop-blur-xl border border-white/[0.08] hover:border-[#5BA5A5]/30 shadow-[0_8px_32px_rgba(0,0,0,0.4)] transition-all duration-300 text-center flex flex-col items-center justify-center relative overflow-hidden min-h-[220px]"
+                  className="flex-1 group p-8 rounded-[24px] bg-[#0F1115] border border-white/[0.08] hover:border-[#5BA5A5]/40 shadow-[0_8px_32px_rgba(0,0,0,0.3)] transition-colors duration-500 text-center flex flex-col items-center justify-center relative overflow-hidden min-h-[220px]"
                 >
-                  <div className="absolute inset-0 bg-gradient-to-b from-[#5BA5A5]/[0.05] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"></div>
+                  {/* Subtle animated background glow */}
+                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,_rgba(91,165,165,0.15)_0%,_transparent_70%)] opacity-0 group-hover:opacity-100 transition-opacity duration-700 motion-reduce:transition-none pointer-events-none"></div>
                   
-                  <div className="w-16 h-16 rounded-full bg-[#5BA5A5]/15 flex items-center justify-center border border-[#5BA5A5]/30 shadow-[0_0_20px_rgba(91,165,165,0.15)] mb-6 group-hover:scale-110 group-hover:-translate-y-1 transition-all duration-300 relative z-10">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#5BA5A5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
+                  {/* Animated top border highlight */}
+                  <div className="absolute top-0 left-1/2 -translate-x-1/2 w-0 h-[1px] bg-gradient-to-r from-transparent via-[#5BA5A5] to-transparent group-hover:w-3/4 transition-all duration-700 ease-[0.23,1,0.32,1] opacity-0 group-hover:opacity-100 motion-reduce:transition-none"></div>
+
+                  <div className="w-16 h-16 rounded-[18px] bg-white/[0.02] group-hover:bg-[#5BA5A5]/10 flex items-center justify-center border border-white/[0.05] group-hover:border-[#5BA5A5]/30 group-hover:shadow-[0_0_20px_rgba(91,165,165,0.2)] mb-6 transition-all duration-500 ease-out relative z-10 motion-reduce:transition-none">
+                    <svg 
+                      className="w-7 h-7 text-[#5BA5A5] transition-transform duration-500 ease-[0.23,1,0.32,1] group-hover:-translate-y-1 group-hover:translate-x-1 motion-reduce:transform-none" 
+                      fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+                    >
+                      <line x1="7" y1="17" x2="17" y2="7"></line>
+                      <polyline points="7 7 17 7 17 17"></polyline>
+                    </svg>
                   </div>
                   
                   <h3 className="text-xl font-semibold text-[#F3F4F6] mb-2 group-hover:text-white transition-colors tracking-wide relative z-10">
                     SEND FILES
                   </h3>
-                  <p className="text-sm text-[#9CA3AF] relative z-10">
+                  <p className="text-[14px] text-[#8B9392] group-hover:text-[#9CA3A2] transition-colors relative z-10">
                     Send files to another device
                   </p>
-                </button>
+                </motion.button>
 
                 {/* RECEIVE FILES */}
-                <button
+                <motion.button
+                  whileHover={{ y: -4 }}
+                  whileTap={{ scale: 0.98 }}
+                  transition={{ duration: 0.4, ease: [0.23, 1, 0.32, 1] }}
                   onClick={() => { window.location.href = '/receive'; }}
-                  className="flex-1 group p-8 rounded-[24px] bg-gradient-to-b from-white/[0.04] to-white/[0.01] hover:from-white/[0.06] hover:to-white/[0.02] backdrop-blur-xl border border-white/[0.08] hover:border-[#D4A574]/30 shadow-[0_8px_32px_rgba(0,0,0,0.4)] transition-all duration-300 text-center flex flex-col items-center justify-center relative overflow-hidden min-h-[220px]"
+                  className="flex-1 group p-8 rounded-[24px] bg-[#0F1115] border border-white/[0.08] hover:border-[#D4A574]/40 shadow-[0_8px_32px_rgba(0,0,0,0.3)] transition-colors duration-500 text-center flex flex-col items-center justify-center relative overflow-hidden min-h-[220px]"
                 >
-                  <div className="absolute inset-0 bg-gradient-to-b from-[#D4A574]/[0.05] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"></div>
+                  {/* Subtle animated background glow */}
+                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,_rgba(212,165,116,0.15)_0%,_transparent_70%)] opacity-0 group-hover:opacity-100 transition-opacity duration-700 motion-reduce:transition-none pointer-events-none"></div>
                   
-                  <div className="w-16 h-16 rounded-full bg-[#D4A574]/15 flex items-center justify-center border border-[#D4A574]/30 shadow-[0_0_20px_rgba(212,165,116,0.15)] mb-6 group-hover:scale-110 group-hover:-translate-y-1 transition-all duration-300 relative z-10">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#D4A574" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><polyline points="19 12 12 19 5 12"></polyline></svg>
+                  {/* Animated top border highlight */}
+                  <div className="absolute top-0 left-1/2 -translate-x-1/2 w-0 h-[1px] bg-gradient-to-r from-transparent via-[#D4A574] to-transparent group-hover:w-3/4 transition-all duration-700 ease-[0.23,1,0.32,1] opacity-0 group-hover:opacity-100 motion-reduce:transition-none"></div>
+
+                  <div className="w-16 h-16 rounded-[18px] bg-white/[0.02] group-hover:bg-[#D4A574]/10 flex items-center justify-center border border-white/[0.05] group-hover:border-[#D4A574]/30 group-hover:shadow-[0_0_20px_rgba(212,165,116,0.2)] mb-6 transition-all duration-500 ease-out relative z-10 motion-reduce:transition-none">
+                    <svg 
+                      className="w-7 h-7 text-[#D4A574] transition-transform duration-500 ease-[0.23,1,0.32,1] group-hover:translate-y-1 group-hover:-translate-x-1 motion-reduce:transform-none" 
+                      fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+                    >
+                      <line x1="17" y1="7" x2="7" y2="17"></line>
+                      <polyline points="17 17 7 17 7 7"></polyline>
+                    </svg>
                   </div>
                   
                   <h3 className="text-xl font-semibold text-[#F3F4F6] mb-2 group-hover:text-white transition-colors tracking-wide relative z-10">
                     RECEIVE FILES
                   </h3>
-                  <p className="text-sm text-[#9CA3AF] relative z-10">
+                  <p className="text-[14px] text-[#8B9392] group-hover:text-[#9CA3A2] transition-colors relative z-10">
                     Receive files from another device
                   </p>
-                </button>
+                </motion.button>
               </div>
             </motion.div>
           );
