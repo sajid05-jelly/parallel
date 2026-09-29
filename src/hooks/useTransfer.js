@@ -112,7 +112,11 @@ export function useTransfer() {
 
   const addFiles = useCallback((fileList) => {
     // Return early if nothing to add
-    if (!fileList || fileList.length === 0) return { added: [], errors: [] };
+    if (!fileList) return { added: [], errors: [] };
+    
+    // Extract to an array synchronously. If it was already converted, this is a no-op.
+    const incoming = Array.from(fileList);
+    if (incoming.length === 0) return { added: [], errors: [] };
 
     setIsProcessingFiles(true);
 
@@ -120,8 +124,6 @@ export function useTransfer() {
     // to close without hanging the UI, providing instant feedback.
     setTimeout(() => {
       try {
-        const incoming = Array.from(fileList);
-        
         setFiles((prev) => {
           const errors = [];
           const addedNames = [];

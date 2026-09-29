@@ -21,16 +21,22 @@ const UploadPortal = ({ onFilesSelected, disabled = false }) => {
     if (disabled) return;
     
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      onFilesSelected(e.dataTransfer.files);
+      // Extract array immediately before the drag event unmounts/invalidates the dataTransfer object
+      const filesArray = Array.from(e.dataTransfer.files);
+      setTimeout(() => {
+        onFilesSelected(filesArray);
+      }, 0);
     }
   };
 
   const handleFileInputChange = (e) => {
     if (e.target.files && e.target.files.length > 0) {
-      const files = e.target.files;
-      // Yield immediately so the OS file picker modal closes instantly
+      // Must convert live FileList to Array BEFORE clearing the input,
+      // otherwise the browser clears the files before the timeout fires!
+      const filesArray = Array.from(e.target.files);
+      
       setTimeout(() => {
-        onFilesSelected(files);
+        onFilesSelected(filesArray);
       }, 0);
     }
     // Reset so same file can be selected again
