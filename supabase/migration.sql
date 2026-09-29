@@ -77,3 +77,12 @@ create policy "Allow anonymous download" on storage.objects
 
 create policy "Allow anonymous delete" on storage.objects
   for delete using (bucket_id = 'transfers');
+
+
+-- ============================================================
+-- PARALLEL PATTERN: Additional Columns
+-- ============================================================
+ALTER TABLE public.transfer_sessions ADD COLUMN IF NOT EXISTS pattern_hash TEXT;
+ALTER TABLE public.transfer_sessions ADD COLUMN IF NOT EXISTS pattern_key_blob TEXT;
+CREATE INDEX IF NOT EXISTS idx_transfer_sessions_pattern_hash ON public.transfer_sessions (pattern_hash) WHERE pattern_hash IS NOT NULL;
+
