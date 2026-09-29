@@ -177,6 +177,13 @@ export default function PatternLock({
       {DOT_POSITIONS.map(dot => {
         const isActive = currentPattern.includes(dot.id);
         
+        let numberColor = 'text-white/[0.15]';
+        if (isActive) {
+          if (error) numberColor = 'text-red-400/80';
+          else if (success) numberColor = 'text-emerald-400/80';
+          else numberColor = 'text-[#5BA5A5]/80';
+        }
+        
         return (
           <div
             key={dot.id}
@@ -188,6 +195,12 @@ export default function PatternLock({
               height: 44
             }}
           >
+            <span 
+              className={`absolute -top-2 left-1/2 -translate-x-1/2 text-[10px] font-mono font-medium transition-colors duration-200 pointer-events-none ${numberColor}`}
+            >
+              {dot.id + 1}
+            </span>
+            
             <div
               className={`rounded-full transition-all duration-200 ${
                 isActive 
