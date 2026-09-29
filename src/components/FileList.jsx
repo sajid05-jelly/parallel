@@ -17,7 +17,9 @@ const FileList = ({ files, onRemoveFile, onAddMore, onCreatePortal, totalSize, i
       const filesArray = Array.from(e.target.files);
       onAddMore(filesArray);
     }
-    e.target.value = '';
+    setTimeout(() => {
+      e.target.value = '';
+    }, 500);
   };
 
   return (

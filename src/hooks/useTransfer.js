@@ -109,14 +109,25 @@ export function useTransfer() {
   }, [status, token]);
 
   const addFiles = useCallback((fileList) => {
-    if (!fileList) return { added: [], errors: [] };
+    console.time('[FILE SELECT] addFiles execution');
+    if (!fileList) {
+      console.timeEnd('[FILE SELECT] addFiles execution');
+      return { added: [], errors: [] };
+    }
     
+    console.time('[FILE SELECT] Array.from');
     const incoming = Array.from(fileList);
-    if (incoming.length === 0) return { added: [], errors: [] };
+    console.timeEnd('[FILE SELECT] Array.from');
+    
+    if (incoming.length === 0) {
+      console.timeEnd('[FILE SELECT] addFiles execution');
+      return { added: [], errors: [] };
+    }
 
     let finalErrors = [];
     let finalAdded = [];
 
+    console.time('[FILE SELECT] setFiles');
     setFiles((prev) => {
       const errors = [];
       const addedNames = [];
@@ -142,7 +153,7 @@ export function useTransfer() {
         const category = getFileTypeCategory(file);
 
         const fileData = {
-          id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 11),
+          id: Math.random().toString(36).substring(2, 11) + Date.now().toString(36),
           _key: key,
           file, 
           name: file.name,
@@ -164,7 +175,9 @@ export function useTransfer() {
       if (toAdd.length === 0) return prev;
       return [...prev, ...toAdd];
     });
+    console.timeEnd('[FILE SELECT] setFiles');
     
+    console.timeEnd('[FILE SELECT] addFiles execution');
     return { added: finalAdded, errors: finalErrors };
   }, []);
 

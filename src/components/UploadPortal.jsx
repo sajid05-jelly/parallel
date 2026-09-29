@@ -27,12 +27,21 @@ const UploadPortal = ({ onFilesSelected, disabled = false }) => {
   };
 
   const handleFileInputChange = (e) => {
+    console.time('[FILE SELECT] Total');
+    console.time('[FILE SELECT] extract');
     if (e.target.files && e.target.files.length > 0) {
       const filesArray = Array.from(e.target.files);
+      console.timeEnd('[FILE SELECT] extract');
+      
+      console.time('[FILE SELECT] onFilesSelected');
       onFilesSelected(filesArray);
+      console.timeEnd('[FILE SELECT] onFilesSelected');
     }
-    // Reset so same file can be selected again
-    e.target.value = '';
+    // Delay clearing the input to prevent iOS file picker hang
+    setTimeout(() => {
+      e.target.value = '';
+    }, 500);
+    console.timeEnd('[FILE SELECT] Total');
   };
 
   const handleButtonClick = (e) => {

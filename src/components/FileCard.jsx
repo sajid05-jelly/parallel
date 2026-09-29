@@ -7,12 +7,16 @@ const FileCard = ({ file, onRemove, index }) => {
 
   useEffect(() => {
     let url = null;
-    if (file.type && file.type.startsWith('image/')) {
-      // Lazily create object URL only when component mounts
-      url = URL.createObjectURL(file.file);
-      setLocalPreview(url);
-    }
+    let timer = setTimeout(() => {
+      // Only generate previews for small image files (< 10 MB) to prevent browser decoder hangs
+      if (file.type && file.type.startsWith('image/') && file.size < 10 * 1024 * 1024) {
+        url = URL.createObjectURL(file.file);
+        setLocalPreview(url);
+      }
+    }, 50); // Yield to main thread so UI renders instantly
+
     return () => {
+      clearTimeout(timer);
       if (url) {
         URL.revokeObjectURL(url);
       }
