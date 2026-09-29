@@ -27,6 +27,7 @@ export default function SenderPage() {
     addFiles,
     mode,
     setMode,
+    pattern,
   } = useTransfer();
 
   useEffect(() => {
@@ -145,6 +146,18 @@ export default function SenderPage() {
             <p className="text-[12px] text-[#5C6462] tracking-wide mt-4">
               End-to-end encrypted &middot; No cloud storage &middot; Unlimited size
             </p>
+
+            <button
+              onClick={() => { window.location.href = '/receive'; }}
+              className="mt-6 px-5 py-2 rounded-xl bg-white/[0.04] border border-white/[0.08] hover:bg-white/[0.07] hover:border-white/[0.12] text-[13px] text-[#9CA3A2] hover:text-[#F5F5F2] font-medium transition-all flex items-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              Receive Files
+            </button>
           </motion.div>
         );
       }
@@ -237,6 +250,7 @@ export default function SenderPage() {
             onCancel={cancelTransfer}
             status={status}
             mode={mode}
+            pattern={pattern}
           />
         </motion.div>
       );

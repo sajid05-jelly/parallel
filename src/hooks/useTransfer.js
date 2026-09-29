@@ -28,6 +28,7 @@ export function useTransfer() {
   });
   const [transferUrl, setTransferUrl] = useState(null);
   const [token, setToken] = useState(null);
+  const [pattern, setPattern] = useState(null);
   const [error, setError] = useState(null);
   const [qrExpiry, setQrExpiry] = useState(null);
   const wakeLockRef = useRef(null);
@@ -239,6 +240,7 @@ export function useTransfer() {
         setTransferUrl(result.url);
         setToken(result.token);
         setQrExpiry(result.expiresAt);
+        setPattern(result.pattern);
         setStatus('WAITING');
       }
     } catch (err) {
@@ -271,6 +273,7 @@ export function useTransfer() {
     });
     setTransferUrl(null);
     setToken(null);
+    setPattern(null);
     setError(null);
     setQrExpiry(null);
     setMode(null);
@@ -295,6 +298,7 @@ export function useTransfer() {
     });
     setTransferUrl(null);
     setToken(null);
+    setPattern(null);
     setError(null);
     setQrExpiry(null);
     setMode(null);
@@ -318,6 +322,7 @@ export function useTransfer() {
     });
     setTransferUrl(null);
     setToken(null);
+    setPattern(null);
     setError(null);
     setQrExpiry(null);
   }, []);
@@ -330,6 +335,7 @@ export function useTransfer() {
     progress,
     transferUrl,
     token,
+    pattern,
     error,
     qrExpiry,
     addFiles,

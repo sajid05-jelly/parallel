@@ -7,12 +7,18 @@ function getRoute() {
   const path = window.location.pathname;
   const hash = window.location.hash;
   
+  // /receive/TOKEN#key=KEYSTRING → receiver with direct link
   const receiveMatch = path.match(/^\/receive\/([a-zA-Z0-9_-]+)$/);
   if (receiveMatch) {
     const token = receiveMatch[1];
     const keyMatch = hash.match(/^#key=([a-zA-Z0-9_-]+)$/);
     const keyString = keyMatch ? keyMatch[1] : null;
     return { page: 'receive', token, keyString };
+  }
+
+  // /receive → receiver landing (pattern / link entry)
+  if (path === '/receive' || path === '/receive/') {
+    return { page: 'receive', token: null, keyString: null };
   }
   
   return { page: 'sender' };

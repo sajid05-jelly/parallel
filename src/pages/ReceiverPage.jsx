@@ -4,9 +4,12 @@ import useReceiver from '../hooks/useReceiver';
 import ParallelBackground from '../components/ParallelBackground';
 import GlassCard from '../components/GlassCard';
 import TransferProgress from '../components/TransferProgress';
+import PatternLock from '../components/PatternLock';
 
 import ErrorState from '../components/ErrorState';
 import { formatFileSize, getFileIcon, getFileTypeCategory } from '../config/constants';
+import { hashPattern } from '../lib/patternUtils';
+import { getSessionByPattern } from '../lib/sessionManager';
 
 
 
@@ -108,6 +111,100 @@ export default function ReceiverPage({ token, keyString }) {
   } = useReceiver();
 
   const [zippingCategory, setZippingCategory] = useState(null);
+
+  // Pattern landing flow state (when token is null — receiver entered via /receive)
+  const [landingMethod, setLandingMethod] = useState(null); // null | 'pattern' | 'link'
+  const [patternError, setPatternError] = useState(false);
+  const [patternSuccess, setPatternSuccess] = useState(false);
+  const [patternMessage, setPatternMessage] = useState('');
+  const [linkInput, setLinkInput] = useState('');
+  const [resolvedToken, setResolvedToken] = useState(token);
+  const [resolvedKeyString, setResolvedKeyString] = useState(keyString);
+
+  // Handle pattern match attempt
+  const handlePatternComplete = useCallback(async (drawnPattern) => {
+    setPatternError(false);
+    setPatternSuccess(false);
+    setPatternMessage('');
+
+    try {
+      const drawn_hash = await hashPattern(drawnPattern);
+      const { session, error: lookupError } = await getSessionByPattern(drawn_hash);
+
+      if (lookupError || !session) {
+        const msg = lookupError?.message || '';
+        if (msg === 'EXPIRED') {
+          setPatternMessage('This portal has expired');
+        } else if (msg === 'ALREADY_CONNECTED') {
+          setPatternMessage('This portal is already connected');
+        } else {
+          setPatternMessage("Pattern doesn't match");
+        }
+        setPatternError(true);
+        setTimeout(() => setPatternError(false), 800);
+        return;
+      }
+
+      // Decode pattern_key_blob to get token + keyString
+      if (!session.pattern_key_blob) {
+        setPatternMessage("Pattern doesn't match");
+        setPatternError(true);
+        setTimeout(() => setPatternError(false), 800);
+        return;
+      }
+
+      try {
+        const decoded = JSON.parse(atob(session.pattern_key_blob));
+        if (decoded.k && decoded.t) {
+          setPatternSuccess(true);
+          setPatternMessage('Pattern matched!');
+          // Short delay to show success animation, then connect
+          setTimeout(() => {
+            setResolvedToken(decoded.t);
+            setResolvedKeyString(decoded.k);
+            setLandingMethod(null);
+          }, 800);
+        } else {
+          setPatternMessage("Pattern doesn't match");
+          setPatternError(true);
+          setTimeout(() => setPatternError(false), 800);
+        }
+      } catch (e) {
+        console.error('[ReceiverPage] Failed to decode pattern_key_blob:', e);
+        setPatternMessage("Pattern doesn't match");
+        setPatternError(true);
+        setTimeout(() => setPatternError(false), 800);
+      }
+    } catch (err) {
+      console.error('[ReceiverPage] Pattern lookup failed:', err);
+      setPatternMessage('Connection error. Try again.');
+      setPatternError(true);
+      setTimeout(() => setPatternError(false), 800);
+    }
+  }, []);
+
+  // Handle link entry
+  const handleLinkSubmit = useCallback(() => {
+    if (!linkInput.trim()) return;
+    try {
+      const url = new URL(linkInput.trim());
+      const pathMatch = url.pathname.match(/\/receive\/([a-zA-Z0-9_-]+)$/);
+      const keyMatch = url.hash.match(/^#key=([a-zA-Z0-9_-]+)$/);
+      if (pathMatch && keyMatch) {
+        setResolvedToken(pathMatch[1]);
+        setResolvedKeyString(keyMatch[1]);
+        setLandingMethod(null);
+      } else {
+        setPatternMessage('Invalid link format');
+        setPatternError(true);
+        setTimeout(() => setPatternError(false), 800);
+      }
+    } catch (e) {
+      setPatternMessage('Invalid URL');
+      setPatternError(true);
+      setTimeout(() => setPatternError(false), 800);
+    }
+  }, [linkInput]);
 
   const handleDownloadAll = useCallback(async (categoryName, items) => {
     if (items.length === 0) return;
@@ -216,20 +313,20 @@ export default function ReceiverPage({ token, keyString }) {
   }, [status]);
 
   useEffect(() => {
-    if (token && keyString && !initializedPortals.has(token)) {
-      initializedPortals.add(token);
-      console.log('[ReceiverPage] Initializing connection for portal', token);
+    if (resolvedToken && resolvedKeyString && !initializedPortals.has(resolvedToken)) {
+      initializedPortals.add(resolvedToken);
+      console.log('[ReceiverPage] Initializing connection for portal', resolvedToken);
       console.trace('[DIAG_TRACE_RECEIVER] connect called');
-      connect(token, keyString);
+      connect(resolvedToken, resolvedKeyString);
     }
     
     return () => {
       // Delay removal to allow React StrictMode to remount without triggering a second connection
       setTimeout(() => {
-        initializedPortals.delete(token);
+        initializedPortals.delete(resolvedToken);
       }, 1000);
     };
-  }, [token, keyString, connect]);
+  }, [resolvedToken, resolvedKeyString, connect]);
 
   const totalSize = files.reduce((acc, f) => acc + (f.size || 0), 0);
 
@@ -254,7 +351,160 @@ export default function ReceiverPage({ token, keyString }) {
       <main className="flex-grow flex flex-col items-center justify-center relative z-10 px-4 sm:px-6 w-full pb-[env(safe-area-inset-bottom)]">
         <AnimatePresence mode="wait">
           
-          {(status === 'LOADING' || status === 'CREATING' || status === 'NEGOTIATING') && (
+          {/* PATTERN LANDING PAGE — when no token/URL provided */}
+          {!resolvedToken && !resolvedKeyString && (
+            <motion.div
+              key="landing"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.3 }}
+              className="w-full max-w-md mx-auto"
+            >
+              {!landingMethod && (
+                <GlassCard className="flex flex-col items-center text-center p-6 md:p-8">
+                  <h2 className="text-2xl font-semibold text-[#F5F5F2] mb-2 tracking-tight">Receive Files</h2>
+                  <p className="text-sm text-[#9CA3A2] mb-8">Choose how to connect to the sender</p>
+
+                  <div className="w-full space-y-3">
+                    {/* Parallel Pattern */}
+                    <button
+                      onClick={() => setLandingMethod('pattern')}
+                      className="w-full group p-4 rounded-xl bg-white/[0.04] hover:bg-white/[0.07] border border-white/[0.08] hover:border-[#5BA5A5]/30 transition-all duration-200 text-left flex items-center gap-4"
+                    >
+                      <div className="w-10 h-10 rounded-lg bg-[#5BA5A5]/15 border border-[#5BA5A5]/25 flex items-center justify-center flex-shrink-0">
+                        <svg className="w-5 h-5" fill="none" stroke="#5BA5A5" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="5" cy="5" r="1.5"></circle>
+                          <circle cx="19" cy="5" r="1.5"></circle>
+                          <circle cx="12" cy="12" r="1.5"></circle>
+                          <circle cx="5" cy="19" r="1.5"></circle>
+                          <circle cx="19" cy="19" r="1.5"></circle>
+                          <line x1="6.5" y1="5" x2="17.5" y2="5"></line>
+                          <line x1="19" y1="6.5" x2="12" y2="12"></line>
+                          <line x1="12" y1="13.5" x2="5" y2="19"></line>
+                        </svg>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-[#F5F5F2] group-hover:text-white">Parallel Pattern</p>
+                        <p className="text-xs text-[#6B7280]">Draw the pattern shown on sender</p>
+                      </div>
+                      <svg className="w-4 h-4 text-[#6B7280] ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path d="M9 18l6-6-6-6"></path></svg>
+                    </button>
+
+                    {/* Enter Link */}
+                    <button
+                      onClick={() => setLandingMethod('link')}
+                      className="w-full group p-4 rounded-xl bg-white/[0.04] hover:bg-white/[0.07] border border-white/[0.08] hover:border-[#D4A574]/30 transition-all duration-200 text-left flex items-center gap-4"
+                    >
+                      <div className="w-10 h-10 rounded-lg bg-[#D4A574]/15 border border-[#D4A574]/25 flex items-center justify-center flex-shrink-0">
+                        <svg className="w-5 h-5" fill="none" stroke="#D4A574" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                        </svg>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-[#F5F5F2] group-hover:text-white">Enter Link</p>
+                        <p className="text-xs text-[#6B7280]">Paste the transfer link from sender</p>
+                      </div>
+                      <svg className="w-4 h-4 text-[#6B7280] ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path d="M9 18l6-6-6-6"></path></svg>
+                    </button>
+
+                    {/* Scan QR */}
+                    <div className="w-full p-4 rounded-xl bg-white/[0.02] border border-white/[0.05] text-left flex items-center gap-4 opacity-70">
+                      <div className="w-10 h-10 rounded-lg bg-white/[0.06] border border-white/[0.08] flex items-center justify-center flex-shrink-0">
+                        <svg className="w-5 h-5" fill="none" stroke="#9CA3A2" viewBox="0 0 24 24" strokeWidth="2">
+                          <rect x="3" y="3" width="7" height="7" rx="1"></rect>
+                          <rect x="14" y="3" width="7" height="7" rx="1"></rect>
+                          <rect x="3" y="14" width="7" height="7" rx="1"></rect>
+                          <rect x="14" y="14" width="3" height="3"></rect>
+                          <rect x="18" y="18" width="3" height="3"></rect>
+                        </svg>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-[#9CA3A2]">Scan QR Code</p>
+                        <p className="text-xs text-[#5C6462]">Use your camera to scan the sender's QR</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => { window.location.href = '/'; }}
+                    className="mt-6 text-xs text-[#6B7280] hover:text-[#F5F5F2] transition-colors"
+                  >
+                    ← Back to Home
+                  </button>
+                </GlassCard>
+              )}
+
+              {/* Pattern Input Screen */}
+              {landingMethod === 'pattern' && (
+                <GlassCard className="flex flex-col items-center text-center p-6 md:p-8">
+                  <h2 className="text-lg font-semibold text-[#F5F5F2] mb-1 tracking-tight">Draw Parallel Pattern</h2>
+                  <p className="text-sm text-[#9CA3A2] mb-6">Match the pattern shown on the sender</p>
+
+                  <div className="relative bg-[#0A0C0D] p-4 rounded-2xl border border-white/[0.06] mb-4" style={{ minWidth: 260, minHeight: 260 }}>
+                    <PatternLock
+                      mode="input"
+                      onPatternComplete={handlePatternComplete}
+                      error={patternError}
+                      success={patternSuccess}
+                    />
+                  </div>
+
+                  {patternMessage && (
+                    <p className={`text-sm font-medium mb-4 ${patternSuccess ? 'text-emerald-400' : patternError ? 'text-red-400' : 'text-[#9CA3A2]'}`}>
+                      {patternSuccess ? '✓ ' : patternError ? '✗ ' : ''}{patternMessage}
+                    </p>
+                  )}
+
+                  <button
+                    onClick={() => { setLandingMethod(null); setPatternMessage(''); }}
+                    className="text-sm text-[#6B7280] hover:text-[#F5F5F2] transition-colors"
+                  >
+                    ← Back
+                  </button>
+                </GlassCard>
+              )}
+
+              {/* Link Input Screen */}
+              {landingMethod === 'link' && (
+                <GlassCard className="flex flex-col items-center text-center p-6 md:p-8">
+                  <h2 className="text-lg font-semibold text-[#F5F5F2] mb-1 tracking-tight">Enter Transfer Link</h2>
+                  <p className="text-sm text-[#9CA3A2] mb-6">Paste the link from the sender</p>
+
+                  <input
+                    type="url"
+                    value={linkInput}
+                    onChange={(e) => setLinkInput(e.target.value)}
+                    placeholder="https://...receive/..."
+                    className="w-full px-4 py-3 rounded-xl bg-white/[0.04] border border-white/[0.1] text-sm text-[#F5F5F2] placeholder-[#5C6462] focus:outline-none focus:border-[#5BA5A5]/50 transition-colors mb-4"
+                    onKeyDown={(e) => e.key === 'Enter' && handleLinkSubmit()}
+                    autoFocus
+                  />
+
+                  {patternMessage && (
+                    <p className="text-sm font-medium mb-4 text-red-400">✗ {patternMessage}</p>
+                  )}
+
+                  <button
+                    onClick={handleLinkSubmit}
+                    className="w-full py-2.5 rounded-xl bg-white text-[#090A0A] font-medium text-sm hover:bg-white/90 active:scale-[0.98] transition-all mb-3"
+                  >
+                    Connect
+                  </button>
+
+                  <button
+                    onClick={() => { setLandingMethod(null); setPatternMessage(''); setLinkInput(''); }}
+                    className="text-sm text-[#6B7280] hover:text-[#F5F5F2] transition-colors"
+                  >
+                    ← Back
+                  </button>
+                </GlassCard>
+              )}
+            </motion.div>
+          )}
+
+          {resolvedToken && (status === 'LOADING' || status === 'CREATING' || status === 'NEGOTIATING') && (
             <motion.div
               key="loading"
               initial={{ opacity: 0, scale: 0.95 }}

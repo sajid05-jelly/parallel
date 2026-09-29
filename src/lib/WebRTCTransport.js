@@ -3,6 +3,7 @@ import { generateEncryptionKey, encryptChunk, base64urlEncode } from './crypto';
 import { createSession, updateSession, cancelSession } from './sessionManager';
 import { SupabaseSignaling } from './SupabaseSignaling';
 import { encodeControlMessage, encodeBinaryChunk, decodeMessage, MESSAGE_TYPES } from './ChunkProtocol';
+import { generatePattern, patternToString, hashPattern } from './patternUtils';
 
 export class WebRTCTransport {
   constructor(options = {}) {
@@ -113,14 +114,23 @@ export class WebRTCTransport {
     this.encryptionKey = key;
     this.keyString = keyString;
 
+    const pattern = generatePattern();
+    const patternString = patternToString(pattern);
+    const patternHash = await hashPattern(pattern);
+    this.pattern = pattern;
+
     // 2. Create session record in Supabase
     const { session, token, error } = await createSession({
       totalFiles: this.progress.totalFiles,
       totalBytes: this.progress.totalBytes,
-      oneReceiverMode: true
+      oneReceiverMode: true,
+      patternHash
     });
 
     if (error || !session) throw error || new Error('Failed to create session record');
+
+    const patternKeyBlob = btoa(JSON.stringify({ k: this.keyString, t: token }));
+    await updateSession(session.id, { pattern_key_blob: patternKeyBlob });
 
     this.sessionId = session.id;
     this.token = token;
@@ -235,7 +245,7 @@ export class WebRTCTransport {
     const url = `${origin}/receive/${this.token}#key=${this.keyString}`;
     const expiresAt = new Date(Date.now() + 120 * 1000).toISOString();
 
-    return { token: this.token, keyString: this.keyString, sessionId: this.sessionId, url, expiresAt };
+    return { token: this.token, keyString: this.keyString, sessionId: this.sessionId, url, expiresAt, pattern: this.pattern };
   }
 
   // ═══════════════════════════════════════════════════════════

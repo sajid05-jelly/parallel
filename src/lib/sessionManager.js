@@ -25,7 +25,7 @@ export async function generateToken() {
 }
 
 
-export async function createSession({ totalFiles, totalBytes, oneReceiverMode = true }) {
+export async function createSession({ totalFiles, totalBytes, oneReceiverMode = true, patternHash = null }) {
   try {
     const { token, tokenHash } = await generateToken();
     const expiresAt = new Date(Date.now() + 120 * 1000).toISOString(); 
@@ -41,6 +41,7 @@ export async function createSession({ totalFiles, totalBytes, oneReceiverMode = 
 
     const insertPayload = {
       token_hash: tokenHash,
+      pattern_hash: patternHash,
       status: 'WAITING',
       expires_at: expiresAt,
       one_receiver_mode: oneReceiverMode,
@@ -126,6 +127,43 @@ export async function getSessionByToken(token) {
     return { session, isExpired: false, error: null };
   } catch (error) {
     console.error('[SessionManager] getSessionByToken exception:', error);
+    return { session: null, error };
+  }
+}
+
+export async function getSessionByPattern(patternHash) {
+  try {
+    if (!patternHash) return { session: null, error: new Error('No pattern provided') };
+
+    if (!isSupabaseConfigured) {
+      return { session: null, error: new Error('Supabase environment variables missing.') };
+    }
+
+    const { supabase } = await import('../config/supabase');
+    const now = new Date().toISOString();
+    
+    const { data: sessions, error } = await supabase
+      .from('transfer_sessions')
+      .select('*')
+      .eq('pattern_hash', patternHash)
+      .eq('status', 'WAITING')
+      .eq('receiver_connected', false)
+      .gt('expires_at', now)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (error) {
+      console.error('[SessionManager] Supabase session SELECT by pattern error:', error);
+      return { session: null, error: new Error(`DATABASE_ERROR: ${error.message}`) };
+    }
+
+    if (!sessions || sessions.length === 0) {
+      return { session: null, error: new Error('NOT_FOUND') };
+    }
+
+    return { session: sessions[0], error: null };
+  } catch (error) {
+    console.error('[SessionManager] getSessionByPattern exception:', error);
     return { session: null, error };
   }
 }

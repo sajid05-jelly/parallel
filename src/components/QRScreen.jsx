@@ -1,15 +1,17 @@
 import React, { useEffect, useRef, useState } from 'react';
 import QRCodeStyling from 'qr-code-styling';
 import GlassCard from './GlassCard';
+import PatternLock from './PatternLock';
 import { formatFileSize, formatDuration } from '../config/constants';
 
-const QRScreen = ({ transferUrl, fileCount, totalSize, expiryDate, onCopyLink, onCancel, status, mode }) => {
+const QRScreen = ({ transferUrl, fileCount, totalSize, expiryDate, onCopyLink, onCancel, status, mode, pattern }) => {
 
   const isExpired = status === 'EXPIRED';
   const isConnected = status === 'CONNECTED';
   const containerRef = useRef(null);
   const [copied, setCopied] = useState(false);
   const [remaining, setRemaining] = useState(120);
+  const [activeTab, setActiveTab] = useState('qr'); // 'qr' or 'pattern'
 
   // Countdown timer
   useEffect(() => {
@@ -24,7 +26,7 @@ const QRScreen = ({ transferUrl, fileCount, totalSize, expiryDate, onCopyLink, o
 
   // Render QR Code
   useEffect(() => {
-    if (!transferUrl || !containerRef.current || isExpired) return;
+    if (!transferUrl || !containerRef.current || isExpired || activeTab !== 'qr') return;
     containerRef.current.innerHTML = '';
     const qrCode = new QRCodeStyling({
       width: 220,
@@ -38,7 +40,7 @@ const QRScreen = ({ transferUrl, fileCount, totalSize, expiryDate, onCopyLink, o
       qrOptions: { errorCorrectionLevel: 'M' }
     });
     qrCode.append(containerRef.current);
-  }, [transferUrl, isExpired]);
+  }, [transferUrl, isExpired, activeTab]);
 
   const handleCopy = () => {
     if (transferUrl) {
@@ -79,15 +81,89 @@ const QRScreen = ({ transferUrl, fileCount, totalSize, expiryDate, onCopyLink, o
           </div>
         ) : (
           <>
-            <div className="relative mb-6 flex items-center justify-center p-1 overflow-hidden rounded-[20px]">
-              <div className="absolute inset-0 bg-[conic-gradient(from_0deg,#5BA5A5,#D4A574,#5BA5A5)] opacity-20 animate-[spin_8s_linear_infinite]"></div>
-              <div className="relative bg-white p-3 rounded-2xl shadow-xl flex items-center justify-center min-w-[244px] min-h-[244px] z-10" ref={containerRef}>
+            {/* Tab switcher — QR Code / Pattern */}
+            {pattern && pattern.length > 0 && (
+              <div className="flex w-full mb-6 bg-white/[0.04] rounded-xl p-1 border border-white/[0.06]">
+                <button
+                  onClick={() => setActiveTab('qr')}
+                  className={`flex-1 py-2 rounded-lg text-xs font-semibold tracking-wide transition-all duration-200 ${
+                    activeTab === 'qr'
+                      ? 'bg-white/[0.08] text-[#F5F5F2] shadow-sm'
+                      : 'text-[#6B7280] hover:text-[#9CA3A2]'
+                  }`}
+                >
+                  <span className="flex items-center justify-center gap-1.5">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                      <rect x="3" y="3" width="7" height="7" rx="1"></rect>
+                      <rect x="14" y="3" width="7" height="7" rx="1"></rect>
+                      <rect x="3" y="14" width="7" height="7" rx="1"></rect>
+                      <rect x="14" y="14" width="3" height="3"></rect>
+                      <rect x="18" y="18" width="3" height="3"></rect>
+                      <rect x="18" y="14" width="3" height="1"></rect>
+                      <rect x="14" y="18" width="1" height="3"></rect>
+                    </svg>
+                    QR Code
+                  </span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('pattern')}
+                  className={`flex-1 py-2 rounded-lg text-xs font-semibold tracking-wide transition-all duration-200 ${
+                    activeTab === 'pattern'
+                      ? 'bg-white/[0.08] text-[#F5F5F2] shadow-sm'
+                      : 'text-[#6B7280] hover:text-[#9CA3A2]'
+                  }`}
+                >
+                  <span className="flex items-center justify-center gap-1.5">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="5" cy="5" r="2"></circle>
+                      <circle cx="19" cy="5" r="2"></circle>
+                      <circle cx="12" cy="12" r="2"></circle>
+                      <circle cx="5" cy="19" r="2"></circle>
+                      <circle cx="19" cy="19" r="2"></circle>
+                      <line x1="7" y1="5" x2="17" y2="5"></line>
+                      <line x1="19" y1="7" x2="12" y2="12"></line>
+                      <line x1="12" y1="14" x2="5" y2="19"></line>
+                    </svg>
+                    Pattern
+                  </span>
+                </button>
               </div>
-            </div>
+            )}
 
-            <p className="text-[#F5F5F2] font-medium mb-1">
-              {mode === 'nearby' ? 'Scan to pair nearby device' : 'Scan to receive all files'}
-            </p>
+            {/* QR Code tab content */}
+            {activeTab === 'qr' && (
+              <>
+                <div className="relative mb-6 flex items-center justify-center p-1 overflow-hidden rounded-[20px]">
+                  <div className="absolute inset-0 bg-[conic-gradient(from_0deg,#5BA5A5,#D4A574,#5BA5A5)] opacity-20 animate-[spin_8s_linear_infinite]"></div>
+                  <div className="relative bg-white p-3 rounded-2xl shadow-xl flex items-center justify-center min-w-[244px] min-h-[244px] z-10" ref={containerRef}>
+                  </div>
+                </div>
+
+                <p className="text-[#F5F5F2] font-medium mb-1">
+                  {mode === 'nearby' ? 'Scan to pair nearby device' : 'Scan to receive all files'}
+                </p>
+              </>
+            )}
+
+            {/* Pattern tab content */}
+            {activeTab === 'pattern' && pattern && (
+              <>
+                <div className="relative mb-6 flex items-center justify-center p-1 overflow-hidden rounded-[20px]">
+                  <div className="absolute inset-0 bg-[conic-gradient(from_0deg,#5BA5A5,#D4A574,#5BA5A5)] opacity-10 animate-[spin_8s_linear_infinite] rounded-[20px]"></div>
+                  <div className="relative bg-[#0A0C0D] p-4 rounded-2xl border border-white/[0.06] z-10 flex items-center justify-center" style={{ minWidth: 260, minHeight: 260 }}>
+                    <PatternLock
+                      pattern={pattern}
+                      mode="display"
+                    />
+                  </div>
+                </div>
+
+                <p className="text-[#F5F5F2] font-medium mb-1">
+                  Draw this pattern on the receiving device
+                </p>
+              </>
+            )}
+
             <p className="text-sm text-[#9CA3A2] mb-6">
               {fileCount} {fileCount === 1 ? 'file' : 'files'} · {formattedSize}
             </p>
@@ -134,6 +210,7 @@ const QRScreen = ({ transferUrl, fileCount, totalSize, expiryDate, onCopyLink, o
                 <div>Status: <span className="text-white">{status}</span></div>
                 <div>Remaining: <span className="text-white">{remaining}s</span></div>
                 <div>URL Origin: <span className="text-teal-400">{transferUrl ? new URL(transferUrl).origin : 'N/A'}</span></div>
+                {pattern && <div>Pattern: <span className="text-teal-400">{pattern.join('-')}</span></div>}
               </div>
             )}
           </>
