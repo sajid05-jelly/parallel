@@ -25,6 +25,7 @@ const FileList = ({ files, onRemoveFile, onAddMore, onCreatePortal, totalSize, i
       <input 
         type="file"
         multiple
+        accept="image/*,video/*,video/mp4,video/quicktime,.mmov,.mov,.mp4,.m4v,*/*"
         className="hidden"
         ref={hiddenInputRef}
         onChange={handleFileInputChange}
