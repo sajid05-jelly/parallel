@@ -119,7 +119,7 @@ export function useTransfer() {
     let finalAdded = [];
 
     const t1 = performance.now();
-    console.log(`[IOS FILE SELECT] validation started at ${t1.toFixed(1)}ms`);
+    console.log(`[IOS PICKER] validation started at ${t1.toFixed(1)}ms`);
 
     setFiles((prev) => {
       const errors = [];
@@ -166,10 +166,10 @@ export function useTransfer() {
       finalAdded = addedNames;
 
       const t2 = performance.now();
-      console.log(`[IOS FILE SELECT] validation finished at ${t2.toFixed(1)}ms (took ${(t2 - t1).toFixed(1)}ms)`);
+      console.log(`[IOS PICKER] validation completed at ${t2.toFixed(1)}ms (took ${(t2 - t1).toFixed(1)}ms)`);
 
       const t3 = performance.now();
-      console.log(`[IOS FILE SELECT] state update triggered at ${t3.toFixed(1)}ms`);
+      console.log(`[IOS PICKER] state update at ${t3.toFixed(1)}ms`);
 
       if (toAdd.length === 0) return prev;
       return [...prev, ...toAdd];

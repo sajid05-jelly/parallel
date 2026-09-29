@@ -28,29 +28,27 @@ const UploadPortal = ({ onFilesSelected, disabled = false }) => {
 
   const handleFileInputChange = (e) => {
     const t0 = performance.now();
-    console.log(`[IOS FILE SELECT] picker returned at ${t0.toFixed(1)}ms`);
+    console.log(`[IOS PICKER] change event received at ${t0.toFixed(1)}ms`);
     
     if (e.target.files && e.target.files.length > 0) {
-      const filesArray = Array.from(e.target.files);
-      const t1 = performance.now();
-      console.log(`[IOS FILE SELECT] files converted at ${t1.toFixed(1)}ms (took ${(t1 - t0).toFixed(1)}ms)`);
+      console.log(`[IOS PICKER] FileList received (count: ${e.target.files.length})`);
       
-      // Log lightweight metadata
-      const meta = filesArray.map(f => ({ name: f.name, size: f.size, type: f.type }));
-      console.log('[IOS FILE SELECT] Metadata:', JSON.stringify(meta));
-
+      const t1 = performance.now();
+      const filesArray = Array.from(e.target.files);
+      const t2 = performance.now();
+      console.log(`[IOS PICKER] Array.from completed at ${t2.toFixed(1)}ms (took ${(t2 - t1).toFixed(1)}ms)`);
+      
       onFilesSelected(filesArray);
       
-      const t2 = performance.now();
-      console.log(`[IOS FILE SELECT] complete at ${t2.toFixed(1)}ms (total JS time: ${(t2 - t0).toFixed(1)}ms)`);
+      const t3 = performance.now();
+      console.log(`[IOS PICKER] handler completed at ${t3.toFixed(1)}ms (total JS time: ${(t3 - t0).toFixed(1)}ms)`);
     }
-    
-    e.target.value = '';
   };
 
   const handleButtonClick = (e) => {
     e.stopPropagation();
     if (!disabled && fileInputRef.current) {
+      fileInputRef.current.value = ''; // Reset BEFORE opening picker
       fileInputRef.current.click();
     }
   };

@@ -8,6 +8,7 @@ const FileList = ({ files, onRemoveFile, onAddMore, onCreatePortal, totalSize, i
 
   const handleAddMoreClick = () => {
     if (hiddenInputRef.current) {
+      hiddenInputRef.current.value = ''; // Reset before opening picker
       hiddenInputRef.current.click();
     }
   };
@@ -17,9 +18,6 @@ const FileList = ({ files, onRemoveFile, onAddMore, onCreatePortal, totalSize, i
       const filesArray = Array.from(e.target.files);
       onAddMore(filesArray);
     }
-    setTimeout(() => {
-      e.target.value = '';
-    }, 500);
   };
 
   return (
