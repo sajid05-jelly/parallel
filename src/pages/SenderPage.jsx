@@ -143,7 +143,7 @@ export default function SenderPage() {
             </div>
             
             <p className="text-[12px] text-[#5C6462] tracking-wide mt-4">
-              End-to-end encrypted &middot; No cloud storage &middot; Up to 10 GB
+              End-to-end encrypted &middot; No cloud storage &middot; Unlimited size
             </p>
           </motion.div>
         );
