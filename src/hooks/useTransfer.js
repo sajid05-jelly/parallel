@@ -109,25 +109,18 @@ export function useTransfer() {
   }, [status, token]);
 
   const addFiles = useCallback((fileList) => {
-    console.time('[FILE SELECT] addFiles execution');
-    if (!fileList) {
-      console.timeEnd('[FILE SELECT] addFiles execution');
-      return { added: [], errors: [] };
-    }
+    const t0 = performance.now();
+    if (!fileList) return { added: [], errors: [] };
     
-    console.time('[FILE SELECT] Array.from');
     const incoming = Array.from(fileList);
-    console.timeEnd('[FILE SELECT] Array.from');
-    
-    if (incoming.length === 0) {
-      console.timeEnd('[FILE SELECT] addFiles execution');
-      return { added: [], errors: [] };
-    }
+    if (incoming.length === 0) return { added: [], errors: [] };
 
     let finalErrors = [];
     let finalAdded = [];
 
-    console.time('[FILE SELECT] setFiles');
+    const t1 = performance.now();
+    console.log(`[IOS FILE SELECT] validation started at ${t1.toFixed(1)}ms`);
+
     setFiles((prev) => {
       const errors = [];
       const addedNames = [];
@@ -172,12 +165,16 @@ export function useTransfer() {
       finalErrors = errors;
       finalAdded = addedNames;
 
+      const t2 = performance.now();
+      console.log(`[IOS FILE SELECT] validation finished at ${t2.toFixed(1)}ms (took ${(t2 - t1).toFixed(1)}ms)`);
+
+      const t3 = performance.now();
+      console.log(`[IOS FILE SELECT] state update triggered at ${t3.toFixed(1)}ms`);
+
       if (toAdd.length === 0) return prev;
       return [...prev, ...toAdd];
     });
-    console.timeEnd('[FILE SELECT] setFiles');
     
-    console.timeEnd('[FILE SELECT] addFiles execution');
     return { added: finalAdded, errors: finalErrors };
   }, []);
 

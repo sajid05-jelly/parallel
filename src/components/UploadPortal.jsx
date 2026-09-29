@@ -27,21 +27,25 @@ const UploadPortal = ({ onFilesSelected, disabled = false }) => {
   };
 
   const handleFileInputChange = (e) => {
-    console.time('[FILE SELECT] Total');
-    console.time('[FILE SELECT] extract');
+    const t0 = performance.now();
+    console.log(`[IOS FILE SELECT] picker returned at ${t0.toFixed(1)}ms`);
+    
     if (e.target.files && e.target.files.length > 0) {
       const filesArray = Array.from(e.target.files);
-      console.timeEnd('[FILE SELECT] extract');
+      const t1 = performance.now();
+      console.log(`[IOS FILE SELECT] files converted at ${t1.toFixed(1)}ms (took ${(t1 - t0).toFixed(1)}ms)`);
       
-      console.time('[FILE SELECT] onFilesSelected');
+      // Log lightweight metadata
+      const meta = filesArray.map(f => ({ name: f.name, size: f.size, type: f.type }));
+      console.log('[IOS FILE SELECT] Metadata:', JSON.stringify(meta));
+
       onFilesSelected(filesArray);
-      console.timeEnd('[FILE SELECT] onFilesSelected');
+      
+      const t2 = performance.now();
+      console.log(`[IOS FILE SELECT] complete at ${t2.toFixed(1)}ms (total JS time: ${(t2 - t0).toFixed(1)}ms)`);
     }
-    // Delay clearing the input to prevent iOS file picker hang
-    setTimeout(() => {
-      e.target.value = '';
-    }, 500);
-    console.timeEnd('[FILE SELECT] Total');
+    
+    e.target.value = '';
   };
 
   const handleButtonClick = (e) => {

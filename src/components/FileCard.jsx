@@ -3,27 +3,7 @@ import { motion } from 'framer-motion';
 import { formatFileSize } from '../config/constants';
 
 const FileCard = ({ file, onRemove, index }) => {
-  const [localPreview, setLocalPreview] = useState(null);
-
-  useEffect(() => {
-    let url = null;
-    let timer = setTimeout(() => {
-      // Only generate previews for small image files (< 10 MB) to prevent browser decoder hangs
-      if (file.type && file.type.startsWith('image/') && file.size < 10 * 1024 * 1024) {
-        url = URL.createObjectURL(file.file);
-        setLocalPreview(url);
-      }
-    }, 50); // Yield to main thread so UI renders instantly
-
-    return () => {
-      clearTimeout(timer);
-      if (url) {
-        URL.revokeObjectURL(url);
-      }
-    };
-  }, [file]);
-
-  const isImage = localPreview !== null;
+  const isImage = false; // Completely disabled per user request for absolute maximum performance
   
   const getIcon = () => {
     if (file.category === 'video') {
@@ -71,11 +51,7 @@ const FileCard = ({ file, onRemove, index }) => {
       className={`group bg-white/[0.03] border border-white/[0.06] border-l-2 ${getAccentColor()} rounded-xl p-3 flex items-center gap-4 hover:bg-white/[0.05] hover:border-white/[0.1] transition-all`}
     >
       <div className="w-12 h-12 flex-shrink-0">
-        {isImage ? (
-          <img src={localPreview} alt={file.name} className="w-full h-full object-cover rounded-lg" />
-        ) : (
-          getIcon()
-        )}
+        {getIcon()}
       </div>
       
       <div className="flex-grow min-w-0">
