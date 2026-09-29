@@ -76,9 +76,11 @@ export function generatePattern() {
   return pattern;
 }
 
-export function patternToString(pattern) {
+export function serializePattern(pattern) {
   if (!pattern || !Array.isArray(pattern)) return '';
-  return pattern.join('-');
+  // Always normalize to ensure one canonical representation
+  const normalized = normalizePattern(pattern);
+  return normalized.join('-');
 }
 
 export function stringToPattern(str) {
@@ -87,13 +89,12 @@ export function stringToPattern(str) {
 }
 
 export async function hashPattern(pattern) {
-  const str = patternToString(pattern);
+  const canonical = serializePattern(pattern);
   const encoder = new TextEncoder();
-  const data = encoder.encode(str);
+  const data = encoder.encode(canonical);
   const hashBuffer = await window.crypto.subtle.digest('SHA-256', data);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
-  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-  return hashHex;
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
 export function validatePattern(pattern) {

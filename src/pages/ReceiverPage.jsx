@@ -8,7 +8,7 @@ import PatternLock from '../components/PatternLock';
 
 import ErrorState from '../components/ErrorState';
 import { formatFileSize, getFileIcon, getFileTypeCategory } from '../config/constants';
-import { hashPattern } from '../lib/patternUtils';
+import { hashPattern, serializePattern } from '../lib/patternUtils';
 import { getSessionByPattern } from '../lib/sessionManager';
 
 
@@ -129,6 +129,14 @@ export default function ReceiverPage({ token, keyString }) {
 
     try {
       const drawn_hash = await hashPattern(drawnPattern);
+      const drawn_canonical = serializePattern(drawnPattern);
+
+      console.log('[PATTERN DEBUG] receiver pattern:\n' + JSON.stringify({
+        points: drawnPattern,
+        canonical: drawn_canonical,
+        hash: drawn_hash
+      }, null, 2));
+
       const { session, error: lookupError } = await getSessionByPattern(drawn_hash);
 
       if (lookupError || !session) {

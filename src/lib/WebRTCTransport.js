@@ -3,7 +3,7 @@ import { generateEncryptionKey, encryptChunk, base64urlEncode } from './crypto';
 import { createSession, updateSession, cancelSession } from './sessionManager';
 import { SupabaseSignaling } from './SupabaseSignaling';
 import { encodeControlMessage, encodeBinaryChunk, decodeMessage, MESSAGE_TYPES } from './ChunkProtocol';
-import { generatePattern, patternToString, hashPattern } from './patternUtils';
+import { generatePattern, serializePattern, hashPattern } from './patternUtils';
 
 export class WebRTCTransport {
   constructor(options = {}) {
@@ -115,9 +115,15 @@ export class WebRTCTransport {
     this.keyString = keyString;
 
     const pattern = generatePattern();
-    const patternString = patternToString(pattern);
+    const patternString = serializePattern(pattern);
     const patternHash = await hashPattern(pattern);
     this.pattern = pattern;
+
+    console.log('[PATTERN DEBUG] sender pattern:\n' + JSON.stringify({
+      points: pattern,
+      canonical: patternString,
+      hash: patternHash
+    }, null, 2));
 
     // 2. Create session record in Supabase
     const { session, token, error } = await createSession({
