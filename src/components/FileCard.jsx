@@ -1,9 +1,25 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { formatFileSize } from '../config/constants';
 
 const FileCard = ({ file, onRemove, index }) => {
-  const isImage = file.type && file.type.startsWith('image/') && file.preview;
+  const [localPreview, setLocalPreview] = useState(null);
+
+  useEffect(() => {
+    let url = null;
+    if (file.type && file.type.startsWith('image/')) {
+      // Lazily create object URL only when component mounts
+      url = URL.createObjectURL(file.file);
+      setLocalPreview(url);
+    }
+    return () => {
+      if (url) {
+        URL.revokeObjectURL(url);
+      }
+    };
+  }, [file]);
+
+  const isImage = localPreview !== null;
   
   const getIcon = () => {
     if (file.category === 'video') {
@@ -52,7 +68,7 @@ const FileCard = ({ file, onRemove, index }) => {
     >
       <div className="w-12 h-12 flex-shrink-0">
         {isImage ? (
-          <img src={file.preview} alt={file.name} className="w-full h-full object-cover rounded-lg" />
+          <img src={localPreview} alt={file.name} className="w-full h-full object-cover rounded-lg" />
         ) : (
           getIcon()
         )}

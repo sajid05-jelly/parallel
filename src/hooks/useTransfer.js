@@ -108,61 +108,76 @@ export function useTransfer() {
     };
   }, [status, token]);
 
+  const [isProcessingFiles, setIsProcessingFiles] = useState(false);
+
   const addFiles = useCallback((fileList) => {
-    const incoming = Array.from(fileList);
-    const errors = [];
-    const addedNames = [];
+    // Return early if nothing to add
+    if (!fileList || fileList.length === 0) return { added: [], errors: [] };
 
-    setFiles((prev) => {
-      const existingKeys = new Set(prev.map((f) => f._key));
+    setIsProcessingFiles(true);
 
-      let currentCount = prev.length;
-      let currentSize = prev.reduce((sum, f) => sum + f.size, 0);
-      const toAdd = [];
+    // Yield to the main thread immediately. This allows native file pickers
+    // to close without hanging the UI, providing instant feedback.
+    setTimeout(() => {
+      try {
+        const incoming = Array.from(fileList);
+        
+        setFiles((prev) => {
+          const errors = [];
+          const addedNames = [];
+          const existingKeys = new Set(prev.map((f) => f._key));
 
-      for (const file of incoming) {
-        const key = fileKey(file);
+          let currentCount = prev.length;
+          let currentSize = prev.reduce((sum, f) => sum + f.size, 0);
+          const toAdd = [];
 
-        if (existingKeys.has(key)) {
-          errors.push(`"${file.name}" is already selected.`);
-          continue;
-        }
+          for (const file of incoming) {
+            const key = fileKey(file);
 
-        if (currentCount >= MAX_FILES_PER_TRANSFER) {
-          errors.push(`Maximum ${MAX_FILES_PER_TRANSFER} files allowed.`);
-          break;
-        }
+            if (existingKeys.has(key)) {
+              errors.push(`"${file.name}" is already selected.`);
+              continue;
+            }
 
-        let preview = null;
-        if (file.type && file.type.startsWith('image/')) {
-          preview = URL.createObjectURL(file);
-        }
+            if (currentCount >= MAX_FILES_PER_TRANSFER) {
+              errors.push(`Maximum ${MAX_FILES_PER_TRANSFER} files allowed.`);
+              break;
+            }
 
-        const category = getFileTypeCategory(file);
+            // WE DO NOT synchronously create previews (URL.createObjectURL) here anymore.
+            // Full blob creation and thumbnailing is deferred to UI rendering.
+            
+            const category = getFileTypeCategory(file);
 
-        const fileData = {
-          id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 11),
-          _key: key,
-          file,
-          name: file.name,
-          size: file.size,
-          type: file.type || '',
-          category,
-          preview,
-        };
+            const fileData = {
+              id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 11),
+              _key: key,
+              file, // The lightweight native File reference
+              name: file.name,
+              size: file.size,
+              type: file.type || '',
+              category,
+              // preview is omitted; handled lazily by FileCard if needed
+            };
 
-        toAdd.push(fileData);
-        existingKeys.add(key);
-        addedNames.push(file.name);
-        currentCount += 1;
-        currentSize += file.size;
+            toAdd.push(fileData);
+            existingKeys.add(key);
+            addedNames.push(file.name);
+            currentCount += 1;
+            currentSize += file.size;
+          }
+
+          if (toAdd.length === 0) return prev;
+          return [...prev, ...toAdd];
+        });
+      } finally {
+        setIsProcessingFiles(false);
       }
-
-      if (toAdd.length === 0) return prev;
-      return [...prev, ...toAdd];
-    });
-
-    return { added: addedNames, errors };
+    }, 10);
+    
+    // Return empty initially since it's deferred, 
+    // any errors should be handled via a toast (but currently ignored by UI anyway)
+    return { added: [], errors: [] };
   }, []);
 
   const removeFile = useCallback((fileId) => {
@@ -345,6 +360,7 @@ export function useTransfer() {
     cancelTransfer,
     reset,
     retry,
+    isProcessingFiles,
   };
 }
 

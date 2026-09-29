@@ -27,7 +27,11 @@ const UploadPortal = ({ onFilesSelected, disabled = false }) => {
 
   const handleFileInputChange = (e) => {
     if (e.target.files && e.target.files.length > 0) {
-      onFilesSelected(e.target.files);
+      const files = e.target.files;
+      // Yield immediately so the OS file picker modal closes instantly
+      setTimeout(() => {
+        onFilesSelected(files);
+      }, 0);
     }
     // Reset so same file can be selected again
     e.target.value = '';

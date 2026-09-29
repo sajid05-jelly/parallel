@@ -14,7 +14,10 @@ const FileList = ({ files, onRemoveFile, onAddMore, onCreatePortal, totalSize, i
 
   const handleFileInputChange = (e) => {
     if (e.target.files && e.target.files.length > 0) {
-      onAddMore(e.target.files);
+      const files = e.target.files;
+      setTimeout(() => {
+        onAddMore(files);
+      }, 0);
     }
     e.target.value = '';
   };
