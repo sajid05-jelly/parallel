@@ -8,11 +8,13 @@ import FileList from '../components/FileList';
 import QRScreen from '../components/QRScreen';
 import TransferProgress from '../components/TransferProgress';
 import ErrorState from '../components/ErrorState';
+import MediaPicker from '../components/MediaPicker';
 import { formatFileSize } from '../config/constants';
 
 
 export default function SenderPage() {
   const [showModeSelection, setShowModeSelection] = useState(false);
+  const [showMediaPicker, setShowMediaPicker] = useState(false);
   const {
     status,
     files,
@@ -254,6 +256,27 @@ export default function SenderPage() {
 
       // Step 2: File selection flow
       if (files.length === 0) {
+        if (mode === 'nearby' && showMediaPicker) {
+          return (
+            <motion.div
+              key="media-picker"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.3 }}
+              className="w-full"
+            >
+              <MediaPicker 
+                onAddSelectedToTransfer={(selectedFiles) => {
+                  handleFilesSelected(selectedFiles);
+                  setShowMediaPicker(false);
+                }} 
+                onCancel={() => setShowMediaPicker(false)}
+              />
+            </motion.div>
+          );
+        }
+
         return (
           <motion.div 
             key="upload-portal"
@@ -284,6 +307,24 @@ export default function SenderPage() {
             </div>
 
             <div className="max-w-xl mx-auto">
+              {mode === 'nearby' && (
+                <button
+                  onClick={() => setShowMediaPicker(true)}
+                  className="w-full mb-4 px-6 py-4 bg-white/[0.06] border border-white/[0.1] hover:bg-white/[0.1] hover:border-white/[0.2] transition-all rounded-[20px] flex items-center justify-between group"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-full bg-[#5BA5A5]/10 flex items-center justify-center text-[#5BA5A5]">
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                    </div>
+                    <div className="text-left">
+                      <div className="text-white font-medium mb-1 group-hover:text-[#5BA5A5] transition-colors">PARALLEL Media</div>
+                      <div className="text-xs text-[#9CA3AF]">Fast selection for iPhone Photos & Videos</div>
+                    </div>
+                  </div>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="group-hover:translate-x-1 transition-transform"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </button>
+              )}
+
               <UploadPortal onFilesSelected={handleFilesSelected} disabled={status === 'UPLOADING'} />
               
               <div className="flex items-center justify-center gap-8 text-[12px] text-[#6B7280] mt-6">
@@ -301,6 +342,27 @@ export default function SenderPage() {
         );
       }
  else {
+        if (showMediaPicker) {
+          return (
+            <motion.div
+              key="media-picker-more"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ duration: 0.3 }}
+              className="w-full"
+            >
+              <MediaPicker 
+                onAddSelectedToTransfer={(selectedFiles) => {
+                  handleFilesSelected(selectedFiles);
+                  setShowMediaPicker(false);
+                }} 
+                onCancel={() => setShowMediaPicker(false)}
+              />
+            </motion.div>
+          );
+        }
+
         return (
           <motion.div
             key="file-list"
@@ -314,7 +376,8 @@ export default function SenderPage() {
             <FileList 
               files={files} 
               onRemoveFile={removeFile} 
-              onAddMore={handleFilesSelected} 
+              onAddMore={handleFilesSelected}
+              onAddMedia={mode === 'nearby' ? () => setShowMediaPicker(true) : undefined}
               onCreatePortal={createPortal} 
               totalSize={totalSize} 
               isUploading={status === 'UPLOADING'} 

@@ -3,7 +3,7 @@ import { AnimatePresence } from 'framer-motion';
 import FileCard from './FileCard';
 import { formatFileSize } from '../config/constants';
 
-const FileList = ({ files, onRemoveFile, onAddMore, onCreatePortal, totalSize, isUploading = false }) => {
+const FileList = ({ files, onRemoveFile, onAddMore, onAddMedia, onCreatePortal, totalSize, isUploading = false }) => {
   const hiddenInputRef = useRef(null);
 
   const handleAddMoreClick = () => {
@@ -33,14 +33,26 @@ const FileList = ({ files, onRemoveFile, onAddMore, onCreatePortal, totalSize, i
       
       <div className="flex justify-between items-center mb-4">
         <h3 className="text-sm font-semibold text-[#F5F5F2]">Selected files</h3>
-        <button 
-          onClick={handleAddMoreClick}
-          disabled={isUploading}
-          className="text-sm text-[#9CA3A2] hover:text-[#F5F5F2] flex items-center gap-1 transition-colors disabled:opacity-50 bg-white/[0.04] rounded-lg px-3 py-1.5 hover:bg-white/[0.08]"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-          Add files
-        </button>
+        <div className="flex items-center gap-2">
+          {onAddMedia && (
+            <button 
+              onClick={onAddMedia}
+              disabled={isUploading}
+              className="text-sm text-[#5BA5A5] hover:text-[#76C2C2] flex items-center gap-1 transition-colors disabled:opacity-50 bg-[#5BA5A5]/10 rounded-lg px-3 py-1.5 hover:bg-[#5BA5A5]/20"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+              Media
+            </button>
+          )}
+          <button 
+            onClick={handleAddMoreClick}
+            disabled={isUploading}
+            className="text-sm text-[#9CA3A2] hover:text-[#F5F5F2] flex items-center gap-1 transition-colors disabled:opacity-50 bg-white/[0.04] rounded-lg px-3 py-1.5 hover:bg-white/[0.08]"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            Files
+          </button>
+        </div>
       </div>
 
       <div className="overflow-y-auto pr-2 space-y-2 mb-4">
