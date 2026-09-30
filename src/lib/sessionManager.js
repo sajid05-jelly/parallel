@@ -126,7 +126,7 @@ export async function getSessionByToken(token) {
       if (error.code === '42501') {
         return { session: null, error: new Error('PERMISSION_ERROR: RLS blocked query') };
       }
-      return { session: null, error: new Error(DATABASE_ERROR: ) };
+      return { session: null, error: new Error(`DATABASE_ERROR: ${error.message}`) };
     }
 
     // Check expiration only if receiver has not yet connected
@@ -178,7 +178,7 @@ export async function getSessionByPattern(patternHash) {
 
     if (error && (!sessions || sessions.length === 0)) {
       console.error('[SessionManager] Supabase session SELECT by pattern error:', error);
-      return { session: null, error: new Error(DATABASE_ERROR: ) };
+      return { session: null, error: new Error(`DATABASE_ERROR: ${error.message}`) };
     }
 
     if (!sessions || sessions.length === 0) {
