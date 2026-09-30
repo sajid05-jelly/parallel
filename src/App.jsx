@@ -24,8 +24,6 @@ function getRoute() {
   return { page: 'sender' };
 }
 
-import { MediaHubProvider } from './contexts/MediaHubContext';
-
 function App() {
   const [route, setRoute] = useState(getRoute());
 
@@ -37,15 +35,13 @@ function App() {
 
   return (
     <ToastProvider>
-      <MediaHubProvider>
-        <div className="min-h-screen text-[#F5F5F2] font-sans antialiased selection:bg-[#5BA5A5]/30 selection:text-white">
-          {route.page === 'receive' ? (
-            <ReceiverPage token={route.token} keyString={route.keyString} />
-          ) : (
-            <SenderPage />
-          )}
-        </div>
-      </MediaHubProvider>
+      <div className="min-h-screen text-[#F5F5F2] font-sans antialiased selection:bg-[#5BA5A5]/30 selection:text-white">
+        {route.page === 'receive' ? (
+          <ReceiverPage token={route.token} keyString={route.keyString} />
+        ) : (
+          <SenderPage />
+        )}
+      </div>
     </ToastProvider>
   );
 }
