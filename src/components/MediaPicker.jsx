@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useMediaHub } from '../contexts/MediaHubContext';
 
@@ -17,36 +17,45 @@ export default function MediaPicker({ onAddSelectedToTransfer, onCancel }) {
   }, [media, filter]);
 
   const handleFileInputChange = (e) => {
+    const t3 = performance.now();
+    console.log(`[T3] Input change event fired at ${t3.toFixed(1)}ms`);
+
     setIsPickerActive(false);
     
-    const t0 = performance.now();
-    console.log(`[MEDIA HUB] change event received at ${t0.toFixed(1)}ms`);
-
     if (e.target.files && e.target.files.length > 0) {
-      console.log(`[MEDIA HUB] FileList received (count: ${e.target.files.length})`);
+      const t4 = performance.now();
+      console.log(`[T4] First File object available at ${t4.toFixed(1)}ms`);
       
-      const t1 = performance.now();
       const filesArray = Array.from(e.target.files);
-      const t2 = performance.now();
-      console.log(`[MEDIA HUB] Array.from completed at ${t2.toFixed(1)}ms (took ${(t2 - t1).toFixed(1)}ms)`);
+      const t5 = performance.now();
+      console.log(`[T5] All ${e.target.files.length} File objects available (Array.from) at ${t5.toFixed(1)}ms (Delta T4->T5: ${(t5 - t4).toFixed(1)}ms)`);
       
+      const t6 = performance.now();
+      console.log(`[T6] MediaHub state update begins at ${t6.toFixed(1)}ms`);
       addMedia(filesArray);
-      
-      const t3 = performance.now();
-      console.log(`[MEDIA HUB] handler completed at ${t3.toFixed(1)}ms (total JS time: ${(t3 - t0).toFixed(1)}ms)`);
+      console.log(`[T6.1] MediaHub state update completed synchronously at ${performance.now().toFixed(1)}ms (Delta T6->T6.1: ${(performance.now() - t6).toFixed(1)}ms)`);
     }
     
     e.target.value = '';
   };
 
   const handleOpenNativePicker = () => {
+    const t0 = performance.now();
+    console.log(`[T0] User tapped Add from Photos at ${t0.toFixed(1)}ms`);
     setIsPickerActive(true);
     if (fileInputRef.current) {
-      console.log('[MEDIA HUB] native picker opened at', performance.now().toFixed(1) + 'ms');
       fileInputRef.current.value = '';
+      const t1 = performance.now();
+      console.log(`[T1] Native iOS picker click() triggered at ${t1.toFixed(1)}ms`);
       fileInputRef.current.click();
     }
   };
+
+  useEffect(() => {
+    if (media.length > 0) {
+      console.log(`[T7] Gallery rendered with ${media.length} items at ${performance.now().toFixed(1)}ms`);
+    }
+  }, [media.length]);
 
   const toggleSelection = (id) => {
     setSelectedIds(prev => {
