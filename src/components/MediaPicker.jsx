@@ -18,22 +18,22 @@ export default function MediaPicker({ onAddSelectedToTransfer, onCancel }) {
 
   const handleFileInputChange = (e) => {
     const t3 = performance.now();
-    console.log(`[T3] Input change event fired at ${t3.toFixed(1)}ms`);
+    console.log(`[IOS_PICKER_PERF] T3: done/change event received at ${t3.toFixed(1)}ms`);
 
     setIsPickerActive(false);
     
     if (e.target.files && e.target.files.length > 0) {
       const t4 = performance.now();
-      console.log(`[T4] First File object available at ${t4.toFixed(1)}ms`);
+      console.log(`[IOS_PICKER_PERF] T4: first File available at ${t4.toFixed(1)}ms`);
       
       const filesArray = Array.from(e.target.files);
       const t5 = performance.now();
-      console.log(`[T5] All ${e.target.files.length} File objects available (Array.from) at ${t5.toFixed(1)}ms (Delta T4->T5: ${(t5 - t4).toFixed(1)}ms)`);
+      console.log(`[IOS_PICKER_PERF] T5: all Files available at ${t5.toFixed(1)}ms (Delta T4->T5: ${(t5 - t4).toFixed(1)}ms)`);
       
       const t6 = performance.now();
-      console.log(`[T6] MediaHub state update begins at ${t6.toFixed(1)}ms`);
+      console.log(`[IOS_PICKER_PERF] T6: MediaHub update started at ${t6.toFixed(1)}ms`);
       addMedia(filesArray);
-      console.log(`[T6.1] MediaHub state update completed synchronously at ${performance.now().toFixed(1)}ms (Delta T6->T6.1: ${(performance.now() - t6).toFixed(1)}ms)`);
+      console.log(`[IOS_PICKER_PERF] T7: MediaHub update completed at ${performance.now().toFixed(1)}ms`);
     }
     
     e.target.value = '';
@@ -41,19 +41,19 @@ export default function MediaPicker({ onAddSelectedToTransfer, onCancel }) {
 
   const handleOpenNativePicker = () => {
     const t0 = performance.now();
-    console.log(`[T0] User tapped Add from Photos at ${t0.toFixed(1)}ms`);
+    console.log(`[IOS_PICKER_PERF] T0: User tapped Add from Photos at ${t0.toFixed(1)}ms`);
     setIsPickerActive(true);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
       const t1 = performance.now();
-      console.log(`[T1] Native iOS picker click() triggered at ${t1.toFixed(1)}ms`);
+      console.log(`[IOS_PICKER_PERF] T1: picker opened (click triggered) at ${t1.toFixed(1)}ms`);
       fileInputRef.current.click();
     }
   };
 
   useEffect(() => {
     if (media.length > 0) {
-      console.log(`[T7] Gallery rendered with ${media.length} items at ${performance.now().toFixed(1)}ms`);
+      console.log(`[IOS_PICKER_PERF] T8: gallery rendered with ${media.length} items at ${performance.now().toFixed(1)}ms`);
     }
   }, [media.length]);
 
@@ -185,7 +185,7 @@ export default function MediaPicker({ onAddSelectedToTransfer, onCancel }) {
           disabled={selectedIds.size === 0}
           className="px-6 py-2.5 bg-white text-black font-medium rounded-xl hover:bg-white/90 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          Add to Transfer
+          DONE
         </button>
       </div>
     </motion.div>

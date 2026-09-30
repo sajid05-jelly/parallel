@@ -58,7 +58,6 @@ const UploadPortal = ({ onFilesSelected, disabled = false }) => {
       <input 
         type="file" 
         multiple
-        accept="image/*,video/*,video/mp4,video/quicktime,.mmov,.mov,.mp4,.m4v,*/*"
         className="hidden" 
         ref={fileInputRef}
         onChange={handleFileInputChange}
