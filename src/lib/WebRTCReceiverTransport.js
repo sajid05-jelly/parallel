@@ -270,7 +270,7 @@ signalingState=${sigState}\n`);
     };
 
     // ── CONNECTION STATE HANDLER ──
-    this.peerConnection.onconnectionstatechange = () => {
+    this.peerConnection.onconnectionstatechange = async () => {
       const state = this.peerConnection?.connectionState;
       const iceState = this.peerConnection?.iceConnectionState;
       console.log(`[ReceiverTransport] PeerConnection state: ${state}, ICE: ${iceState}, DC: ${this.dataChannel?.readyState}`);
@@ -281,6 +281,22 @@ signalingState=${sigState}\n`);
           this._connectionTimeout = null;
         }
         this._recoveryStartTime = 0;
+
+        try {
+          const stats = await this.peerConnection.getStats();
+          stats.forEach((report) => {
+            if (report.type === 'candidate-pair' && (report.state === 'succeeded' || report.nominated)) {
+              const localCand = stats.get(report.localCandidateId);
+              const remoteCand = stats.get(report.remoteCandidateId);
+              console.log('[WAN_DIAGNOSTICS_RX] ==============================');
+              console.log(`[WAN_DIAGNOSTICS_RX] candidatePair=${localCand?.candidateType || 'unknown'} <-> ${remoteCand?.candidateType || 'unknown'}`);
+              console.log(`[WAN_DIAGNOSTICS_RX] protocol=${localCand?.protocol || 'unknown'}`);
+              console.log(`[WAN_DIAGNOSTICS_RX] localAddress=${localCand?.address || localCand?.ip || 'unknown'}:${localCand?.port || 'unknown'} (${localCand?.networkType || 'unknown'})`);
+              console.log(`[WAN_DIAGNOSTICS_RX] remoteAddress=${remoteCand?.address || remoteCand?.ip || 'unknown'}:${remoteCand?.port || 'unknown'}`);
+              console.log('[WAN_DIAGNOSTICS_RX] ==============================');
+            }
+          });
+        } catch (e) { }
 
         if (this.status === 'RECOVERING') {
           // Only transition when DataChannel is also open

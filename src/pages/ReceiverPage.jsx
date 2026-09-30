@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import useReceiver from '../hooks/useReceiver';
-import ParallelBackground from '../components/ParallelBackground';
+
 import GlassCard from '../components/GlassCard';
 import TransferProgress from '../components/TransferProgress';
 import PatternLock from '../components/PatternLock';
@@ -340,7 +340,7 @@ export default function ReceiverPage({ token, keyString }) {
 
   return (
     <div className="min-h-[100dvh] flex flex-col text-[#F5F5F2] overflow-hidden relative">
-      <ParallelBackground />
+      
       
       <header className="absolute top-0 left-0 w-full p-4 sm:p-6 z-20 flex items-center justify-between">
         <div className="flex items-center gap-2.5 group">

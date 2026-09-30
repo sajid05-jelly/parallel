@@ -285,34 +285,42 @@ export class WebRTCTransport {
         this._iceHealthy = true;
         if (this._connectionTimeout) clearTimeout(this._connectionTimeout);
 
+        let isDirectLocal = false;
+        try {
+          const stats = await this.peerConnection.getStats();
+          let activePairFound = false;
+          stats.forEach((report) => {
+            if (report.type === 'candidate-pair' && (report.state === 'succeeded' || report.nominated)) {
+              activePairFound = true;
+              const localCand = stats.get(report.localCandidateId);
+              const remoteCand = stats.get(report.remoteCandidateId);
+              console.log('[WAN_DIAGNOSTICS] ==============================');
+              console.log(`[WAN_DIAGNOSTICS] MODE=${this.mode}`);
+              console.log(`[WAN_DIAGNOSTICS] candidatePair=${localCand?.candidateType || 'unknown'} <-> ${remoteCand?.candidateType || 'unknown'}`);
+              console.log(`[WAN_DIAGNOSTICS] protocol=${localCand?.protocol || 'unknown'}`);
+              console.log(`[WAN_DIAGNOSTICS] localAddress=${localCand?.address || localCand?.ip || 'unknown'}:${localCand?.port || 'unknown'} (${localCand?.networkType || 'unknown'})`);
+              console.log(`[WAN_DIAGNOSTICS] remoteAddress=${remoteCand?.address || remoteCand?.ip || 'unknown'}:${remoteCand?.port || 'unknown'}`);
+              console.log(`[WAN_DIAGNOSTICS] currentRoundTripTime=${report.currentRoundTripTime} s`);
+              console.log(`[WAN_DIAGNOSTICS] availableOutgoingBitrate=${report.availableOutgoingBitrate}`);
+              console.log('[WAN_DIAGNOSTICS] ==============================');
+
+              if (localCand?.candidateType === 'relay' || remoteCand?.candidateType === 'relay') {
+                isDirectLocal = false;
+              } else if (localCand?.candidateType === 'host' && remoteCand?.candidateType === 'host') {
+                isDirectLocal = true;
+              } else if (localCand?.candidateType === 'host' || remoteCand?.candidateType === 'host' || localCand?.candidateType === 'srflx') {
+                isDirectLocal = true;
+              }
+            }
+          });
+          if (!activePairFound) isDirectLocal = true;
+        } catch (e) {
+          console.warn('[WebRTCTransport] Stats error:', e);
+          isDirectLocal = true;
+        }
+
         // Strict LAN Validation for Nearby Mode
         if (this.mode === 'nearby') {
-          let isDirectLocal = false;
-          try {
-            const stats = await this.peerConnection.getStats();
-            let activePairFound = false;
-            stats.forEach((report) => {
-              if (report.type === 'candidate-pair' && (report.state === 'succeeded' || report.nominated)) {
-                activePairFound = true;
-                const localCand = stats.get(report.localCandidateId);
-                const remoteCand = stats.get(report.remoteCandidateId);
-                console.log('[WebRTCTransport] Active candidate pair:', localCand?.candidateType, '<->', remoteCand?.candidateType);
-
-                if (localCand?.candidateType === 'relay' || remoteCand?.candidateType === 'relay') {
-                  isDirectLocal = false;
-                } else if (localCand?.candidateType === 'host' && remoteCand?.candidateType === 'host') {
-                  isDirectLocal = true;
-                } else if (localCand?.candidateType === 'host' || remoteCand?.candidateType === 'host' || localCand?.candidateType === 'srflx') {
-                  isDirectLocal = true;
-                }
-              }
-            });
-            if (!activePairFound) isDirectLocal = true;
-          } catch (e) {
-            console.warn('[WebRTCTransport] Stats error:', e);
-            isDirectLocal = true;
-          }
-
           if (!isDirectLocal) {
             console.error('[WebRTCTransport] Nearby mode rejected: active candidate pair uses TURN/relay!');
             this.onError(new Error('Nearby Transfer requires both devices to be connected to the same Wi-Fi.'));
@@ -933,8 +941,11 @@ signalingState=${this.peerConnection?.signalingState}\n`);
     const chunkSize = this._negotiatedChunkSize;
     const totalChunks = fileInfo.totalChunks;
 
-    const DYNAMIC_HIGH_WATER_MARK = 4 * 1024 * 1024;
-    const DYNAMIC_LOW_WATER_MARK = 1024 * 1024;
+    const DYNAMIC_HIGH_WATER_MARK = HIGH_WATER_MARK || 512 * 1024;
+    const DYNAMIC_LOW_WATER_MARK = LOW_WATER_MARK || 128 * 1024;
+    // MAX_IN_FLIGHT limits how far ahead of ACKs we can get.
+    // 2MB is a reasonable WAN BDP window limit without choking the ACKs
+    const MAX_IN_FLIGHT = 2 * 1024 * 1024; 
 
     if (this.dataChannel) {
       this.dataChannel.bufferedAmountLowThreshold = DYNAMIC_LOW_WATER_MARK;
@@ -983,7 +994,6 @@ signalingState=${this.peerConnection?.signalingState}\n`);
       }
 
       // ── Flow control: don't get too far ahead of receiver ACKs ──
-      const MAX_IN_FLIGHT = 8 * 1024 * 1024;
       while ((this._filePlaintextBytesSent - this._currentFileAck.ackedBytes) > MAX_IN_FLIGHT) {
         if (this.isTransferCancelled || this.status === 'FAILED') throw new Error('Transfer cancelled');
         if (!this._iceHealthy || !this.dataChannel || this.dataChannel.readyState !== 'open') break; // Let pause check handle it

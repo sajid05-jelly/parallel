@@ -97,24 +97,36 @@ export async function getSessionByToken(token) {
       return { session: null, error: new Error('Supabase environment variables missing in Vercel.') };
     }
 
-
-
     const { supabase } = await import('../config/supabase');
-    const { data: session, error } = await supabase
-      .from('transfer_sessions')
-      .select('*')
-      .eq('token_hash', tokenHash)
-      .single();
+    
+    let session = null;
+    let error = null;
+
+    // Try secure RPC first
+    const rpcResult = await supabase.rpc('get_session_by_token', { p_token_hash: tokenHash });
+    
+    if (!rpcResult.error && rpcResult.data && rpcResult.data.length > 0) {
+      session = rpcResult.data[0];
+    } else {
+      // Fallback to direct select
+      const selectResult = await supabase
+        .from('transfer_sessions')
+        .select('*')
+        .eq('token_hash', tokenHash)
+        .single();
+      session = selectResult.data;
+      error = selectResult.error;
+    }
       
-    if (error) {
-      console.error('[SessionManager] Supabase session SELECT error:', error);
-      if (error.code === 'PGRST116') { // PostgreSQL code for 0 rows returned
+    if (error && !session) {
+      console.error('[SessionManager] Supabase session lookup error:', error);
+      if (error.code === 'PGRST116') {
         return { session: null, error: new Error('NOT_FOUND') };
       }
-      if (error.code === '42501') { // RLS permission denied
+      if (error.code === '42501') {
         return { session: null, error: new Error('PERMISSION_ERROR: RLS blocked query') };
       }
-      return { session: null, error: new Error(`DATABASE_ERROR: ${error.message}`) };
+      return { session: null, error: new Error(DATABASE_ERROR: ) };
     }
 
     // Check expiration only if receiver has not yet connected
@@ -130,7 +142,6 @@ export async function getSessionByToken(token) {
     return { session: null, error };
   }
 }
-
 export async function getSessionByPattern(patternHash) {
   try {
     if (!patternHash) return { session: null, error: new Error('No pattern provided') };
@@ -142,19 +153,32 @@ export async function getSessionByPattern(patternHash) {
     const { supabase } = await import('../config/supabase');
     const now = new Date().toISOString();
     
-    const { data: sessions, error } = await supabase
-      .from('transfer_sessions')
-      .select('*')
-      .eq('pattern_hash', patternHash)
-      .eq('status', 'WAITING')
-      .eq('receiver_connected', false)
-      .gt('expires_at', now)
-      .order('created_at', { ascending: false })
-      .limit(1);
+    let sessions = null;
+    let error = null;
 
-    if (error) {
+    // Try secure RPC first
+    const rpcResult = await supabase.rpc('get_session_by_pattern', { p_pattern_hash: patternHash });
+    
+    if (!rpcResult.error && rpcResult.data && rpcResult.data.length > 0) {
+      sessions = rpcResult.data;
+    } else {
+      // Fallback to direct select
+      const selectResult = await supabase
+        .from('transfer_sessions')
+        .select('*')
+        .eq('pattern_hash', patternHash)
+        .eq('status', 'WAITING')
+        .eq('receiver_connected', false)
+        .gt('expires_at', now)
+        .order('created_at', { ascending: false })
+        .limit(1);
+      sessions = selectResult.data;
+      error = selectResult.error;
+    }
+
+    if (error && (!sessions || sessions.length === 0)) {
       console.error('[SessionManager] Supabase session SELECT by pattern error:', error);
-      return { session: null, error: new Error(`DATABASE_ERROR: ${error.message}`) };
+      return { session: null, error: new Error(DATABASE_ERROR: ) };
     }
 
     if (!sessions || sessions.length === 0) {
@@ -167,8 +191,6 @@ export async function getSessionByPattern(patternHash) {
     return { session: null, error };
   }
 }
-
-
 export async function updateSession(sessionId, updates) {
   try {
     if (!isSupabaseConfigured) {
@@ -287,3 +309,5 @@ export async function findExpiredSessions() {
     return { sessions: [], error };
   }
 }
+
+

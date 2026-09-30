@@ -1,10 +1,14 @@
 
 export const MAX_FILES_PER_TRANSFER = Number(import.meta.env.VITE_MAX_FILES_PER_TRANSFER) || 50;
 
-// WebRTC DataChannel chunking configuration (Safe 64KB chunk slice & 1MB buffer window to prevent queue overflow)
-export const WEBRTC_CHUNK_SIZE = Number(import.meta.env.VITE_WEBRTC_CHUNK_SIZE) || 65536; // 64KB safe dynamic default
-export const HIGH_WATER_MARK = 1024 * 1024; // 1MB high-water mark (prevents browser SCTP send queue buffer overflow)
-export const LOW_WATER_MARK = 256 * 1024;   // 256KB low-water mark floor to resume sending
+// WebRTC DataChannel chunking configuration
+// 64KB chunks can cause massive fragmentation drops on WAN. 16KB-32KB is much safer for SCTP over UDP.
+export const WEBRTC_CHUNK_SIZE = Number(import.meta.env.VITE_WEBRTC_CHUNK_SIZE) || 32768; // 32KB
+
+// To prevent bufferbloat and SCTP congestion collapse, do not buffer 4MB in the OS.
+// Keep the high water mark around 512KB for a healthy pipeline.
+export const HIGH_WATER_MARK = 512 * 1024;
+export const LOW_WATER_MARK = 128 * 1024;
 
 
 
@@ -25,7 +29,19 @@ export const ICE_SERVERS = (() => {
   const turnCredential = import.meta.env.VITE_TURN_CREDENTIAL;
 
   if (turnUrl) {
-    const turnConfig = { urls: turnUrl };
+    // Split by comma in case multiple TURN URLs are provided (e.g. UDP, TCP, TLS)
+    const rawUrls = turnUrl.split(',').map(u => u.trim()).filter(Boolean);
+    
+    // Sort to ensure UDP is tried before TCP/TLS to avoid artificial WAN bottlenecks
+    const sortedUrls = rawUrls.sort((a, b) => {
+      const aIsUdp = !a.includes('transport=tcp') && !a.startsWith('turns:');
+      const bIsUdp = !b.includes('transport=tcp') && !b.startsWith('turns:');
+      if (aIsUdp && !bIsUdp) return -1;
+      if (!aIsUdp && bIsUdp) return 1;
+      return 0;
+    });
+
+    const turnConfig = { urls: sortedUrls.length === 1 ? sortedUrls[0] : sortedUrls };
     if (turnUsername) turnConfig.username = turnUsername;
     if (turnCredential) turnConfig.credential = turnCredential;
     servers.push(turnConfig);

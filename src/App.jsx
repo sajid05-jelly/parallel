@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import SenderPage from './pages/SenderPage';
 import ReceiverPage from './pages/ReceiverPage';
 import { ToastProvider } from './components/Toast';
+import ParallelBackground from './components/ParallelBackground';
 
 function getRoute() {
   const path = window.location.pathname;
@@ -35,7 +36,8 @@ function App() {
 
   return (
     <ToastProvider>
-      <div className="min-h-screen text-[#F5F5F2] font-sans antialiased selection:bg-[#5BA5A5]/30 selection:text-white">
+      <ParallelBackground />
+      <div className="min-h-screen relative z-0 text-[#F5F5F2] font-sans antialiased selection:bg-[#5BA5A5]/30 selection:text-white">
         {route.page === 'receive' ? (
           <ReceiverPage token={route.token} keyString={route.keyString} />
         ) : (

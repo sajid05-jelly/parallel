@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTransfer } from '../hooks/useTransfer';
-import ParallelBackground from '../components/ParallelBackground';
+
 import Navbar from '../components/Navbar';
 import UploadPortal from '../components/UploadPortal';
 import FileList from '../components/FileList';
@@ -410,7 +410,7 @@ export default function SenderPage() {
 
   return (
     <div className="min-h-screen flex flex-col relative overflow-hidden">
-      <ParallelBackground />
+      
       <Navbar />
       
       <main className="flex-grow flex items-center justify-center px-4 pt-24 pb-12 z-10 relative">

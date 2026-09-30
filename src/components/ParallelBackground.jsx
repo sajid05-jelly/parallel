@@ -27,7 +27,7 @@ const ParallelBackground = () => {
   }, []);
 
   return (
-    <div ref={containerRef} className="fixed inset-0 pointer-events-none -z-10 bg-[#030407] overflow-hidden">
+    <div ref={containerRef} className="fixed inset-0 w-[100vw] h-[100dvh] pointer-events-none -z-50 bg-[#030407] overflow-hidden">
       
       {/* Subtle noise texture for a premium cinematic feel */}
       <div 
