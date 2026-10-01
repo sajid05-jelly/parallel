@@ -33,6 +33,7 @@ export class WebRTCTransport {
     // Negotiated chunk size — determined once DataChannel is open
     this._negotiatedChunkSize = WEBRTC_CHUNK_SIZE;
 
+    this._wanDiagnostics = { path: 'Unknown', transport: 'Unknown', activePair: '' };
     this.progress = {
       totalBytes: 0,
       sentBytes: 0,
@@ -951,7 +952,8 @@ signalingState=${this.peerConnection?.signalingState}\n`);
       this.dataChannel.bufferedAmountLowThreshold = DYNAMIC_LOW_WATER_MARK;
     }
 
-    let chunkIndex = 0;
+        let chunkIndex = 0;
+    this._lastYieldTime = Date.now();
 
     while (chunkIndex < totalChunks) {
       if (this.isTransferCancelled || this.status === 'FAILED') {
@@ -1302,3 +1304,4 @@ signalingState=${this.peerConnection?.signalingState}\n`);
     }
   }
 }
+

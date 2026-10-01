@@ -137,3 +137,4 @@ const TransferProgress = ({ progress = {}, direction = 'sending', status }) => {
 };
 
 export default TransferProgress;
+
