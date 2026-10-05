@@ -1063,10 +1063,11 @@ signalingState=${this.peerConnection?.signalingState}\n`);
 
       this._updateProgressStats();
 
-      // Yield to browser event loop every 5 chunks so ICE keepalives get processed
-      if (chunkIndex % 5 === 0) {
-        await new Promise(r => setTimeout(r, 0));
-      }
+      // Yield to browser event loop to allow ACKs and UI updates
+        if (Date.now() - this._lastYieldTime > 10) {
+          await new Promise(r => setTimeout(r, 0));
+          this._lastYieldTime = Date.now();
+        }
 
       chunkIndex++;
     }
@@ -1201,10 +1202,42 @@ signalingState=${this.peerConnection?.signalingState}\n`);
       
       this.progress.percentage = Math.min(100, Math.max(0, (actualSentBytes / this.progress.totalBytes) * 100));
 
-      this._lastUpdate = now;
-      this._lastActualSentBytes = actualSentBytes;
+        this._lastUpdate = now;
+        this._lastActualSentBytes = actualSentBytes;
 
-      this.onProgress({ ...this.progress });
+        this.progress.diagnostics = {
+          path: this._wanDiagnostics?.path || 'Unknown',
+          transport: this._wanDiagnostics?.transport || 'Unknown',
+          localType: this._wanDiagnostics?.localType || 'Unknown',
+          remoteType: this._wanDiagnostics?.remoteType || 'Unknown',
+          activePair: this._wanDiagnostics?.activePair || 'Unknown',
+          chunkSize: this._negotiatedChunkSize || 32768,
+          bufferedAmount: buffered,
+          ackWindow: (this._filePlaintextBytesSent || 0) - (this._currentFileAck?.ackedBytes || 0),
+          actualThroughput: formatFileSize(rollingSpeed) + '/s',
+          retransmissions: 0
+        };
+
+        if (!this._lastDiagLog || now - this._lastDiagLog > 5000) {
+          console.log(`
+[WEBRTC NETWORK]
+ICE candidate pair: ${this._wanDiagnostics?.activePair}
+local candidate type: ${this._wanDiagnostics?.localType}
+remote candidate type: ${this._wanDiagnostics?.remoteType}
+connection path: ${this._wanDiagnostics?.path}
+transport: ${this._wanDiagnostics?.transport}
+ICE state: ${this.peerConnection?.iceConnectionState || 'unknown'}
+connection state: ${this.peerConnection?.connectionState || 'unknown'}
+DataChannel state: ${this.dataChannel?.readyState || 'unknown'}
+bufferedAmount: ${buffered}
+chunk size: ${this._negotiatedChunkSize || 32768}
+ACK window: ${(this._filePlaintextBytesSent || 0) - (this._currentFileAck?.ackedBytes || 0)}
+actual throughput: ${formatFileSize(rollingSpeed)}/s
+`);
+          this._lastDiagLog = now;
+        }
+
+        this.onProgress({ ...this.progress });
     }
   }
 
