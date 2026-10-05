@@ -1,4 +1,4 @@
-import { ICE_SERVERS, NEARBY_ICE_SERVERS, WEBRTC_CHUNK_SIZE, HIGH_WATER_MARK, LOW_WATER_MARK } from '../config/constants';
+import { ICE_SERVERS, NEARBY_ICE_SERVERS, WEBRTC_CHUNK_SIZE, HIGH_WATER_MARK, LOW_WATER_MARK, formatFileSize } from '../config/constants';
 import { generateEncryptionKey, encryptChunk, base64urlEncode } from './crypto';
 import { createSession, updateSession, cancelSession } from './sessionManager';
 import { SupabaseSignaling } from './SupabaseSignaling';
