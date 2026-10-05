@@ -27,6 +27,8 @@ export class WebRTCTransport {
 
     this.isTransferAccepted = false;
     this.isTransferCancelled = false;
+    this._stallWatchdog = null;
+    this._zeroSpeedCount = 0;
     this.isCompleted = false;
     this._manifestSent = false;
 
@@ -1196,6 +1198,23 @@ signalingState=${this.peerConnection?.signalingState}\n`);
 
       const rollingSpeed = this._speedHistory.reduce((a, b) => a + b, 0) / this._speedHistory.length;
       this.progress.speed = rollingSpeed;
+        
+        // STALL WATCHDOG: If we are transferring, have data in buffer, but speed is 0 for 5+ seconds -> Force ICE Restart
+        if (this.status === 'TRANSFERRING' && buffered > 0) {
+          if (rollingSpeed < 1000) { // less than 1KB/s
+            this._zeroSpeedCount = (this._zeroSpeedCount || 0) + 1;
+          } else {
+            this._zeroSpeedCount = 0;
+          }
+
+          if (this._zeroSpeedCount > 50) { // 50 ticks * 0.1s = 5 seconds
+            console.warn('[WebRTCTransport] STALL DETECTED! Forcing ICE Restart to find a better path.');
+            this._zeroSpeedCount = 0;
+            this._attemptRecovery();
+          }
+        } else {
+          this._zeroSpeedCount = 0;
+        }
 
       const remainingBytes = this.progress.totalBytes - actualSentBytes;
       this.progress.eta = rollingSpeed > 0 ? remainingBytes / rollingSpeed : 0;
