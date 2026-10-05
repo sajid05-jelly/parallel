@@ -388,7 +388,7 @@ export class WebRTCTransport {
     this.dataChannel.onopen = () => {
       console.log('[WebRTCTransport] DataChannel opened');
       this._iceHealthy = true;
-      this._negotiatedChunkSize = 65536;
+      this._negotiatedChunkSize = WEBRTC_CHUNK_SIZE;
 
       this.files = this.files.map(f => ({
         ...f,
@@ -1343,4 +1343,5 @@ actual throughput: ${formatFileSize(rollingSpeed)}/s
     }
   }
 }
+
 
