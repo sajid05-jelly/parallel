@@ -3,12 +3,12 @@ export const MAX_FILES_PER_TRANSFER = Number(import.meta.env.VITE_MAX_FILES_PER_
 
 // WebRTC DataChannel chunking configuration
 // 64KB chunks can cause massive fragmentation drops on WAN. 16KB-32KB is much safer for SCTP over UDP.
-export const WEBRTC_CHUNK_SIZE = Number(import.meta.env.VITE_WEBRTC_CHUNK_SIZE) || 32768; // 32KB
+export const WEBRTC_CHUNK_SIZE = 16384; // STRICTLY 16KB TO PREVENT UDP FRAGMENTATION DROPS ON HOTSPOTS // 32KB
 
 // To prevent bufferbloat and SCTP congestion collapse, do not buffer 4MB in the OS.
 // Keep the high water mark around 512KB for a healthy pipeline.
-export const HIGH_WATER_MARK = 512 * 1024;
-export const LOW_WATER_MARK = 128 * 1024;
+export const HIGH_WATER_MARK = 256 * 1024;
+export const LOW_WATER_MARK = 64 * 1024;
 
 
 
@@ -130,3 +130,5 @@ export function getFileIcon(category) {
     default: return '📄';
   }
 }
+
+
