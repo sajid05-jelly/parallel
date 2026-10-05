@@ -295,15 +295,21 @@ export class WebRTCTransport {
               activePairFound = true;
               const localCand = stats.get(report.localCandidateId);
               const remoteCand = stats.get(report.remoteCandidateId);
-              console.log('[WAN_DIAGNOSTICS] ==============================');
-              console.log(`[WAN_DIAGNOSTICS] MODE=${this.mode}`);
-              console.log(`[WAN_DIAGNOSTICS] candidatePair=${localCand?.candidateType || 'unknown'} <-> ${remoteCand?.candidateType || 'unknown'}`);
-              console.log(`[WAN_DIAGNOSTICS] protocol=${localCand?.protocol || 'unknown'}`);
-              console.log(`[WAN_DIAGNOSTICS] localAddress=${localCand?.address || localCand?.ip || 'unknown'}:${localCand?.port || 'unknown'} (${localCand?.networkType || 'unknown'})`);
-              console.log(`[WAN_DIAGNOSTICS] remoteAddress=${remoteCand?.address || remoteCand?.ip || 'unknown'}:${remoteCand?.port || 'unknown'}`);
-              console.log(`[WAN_DIAGNOSTICS] currentRoundTripTime=${report.currentRoundTripTime} s`);
-              console.log(`[WAN_DIAGNOSTICS] availableOutgoingBitrate=${report.availableOutgoingBitrate}`);
-              console.log('[WAN_DIAGNOSTICS] ==============================');
+              
+              const localType = localCand?.candidateType || 'unknown';
+              const remoteType = remoteCand?.candidateType || 'unknown';
+              const isRelay = localType === 'relay' || remoteType === 'relay';
+              const path = isRelay ? 'RELAY' : 'DIRECT';
+              const transport = (localCand?.protocol || 'unknown').toUpperCase();
+              
+              this._wanDiagnostics = {
+                activePair: `${localType} <-> ${remoteType}`,
+                localType,
+                remoteType,
+                path,
+                transport
+              };
+
 
               if (localCand?.candidateType === 'relay' || remoteCand?.candidateType === 'relay') {
                 isDirectLocal = false;
