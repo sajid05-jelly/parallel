@@ -1205,30 +1205,40 @@ signalingState=${this.peerConnection?.signalingState}\n`);
       const rollingSpeed = this._speedHistory.reduce((a, b) => a + b, 0) / this._speedHistory.length;
       this.progress.speed = rollingSpeed;
         
-        // STALL WATCHDOG: If we are transferring, have data in buffer, but speed is 0 for 5+ seconds -> Force ICE Restart
+        // --- TRUE AVERAGE WATCHDOG ---
+        if (this._watchdogBytes === undefined) this._watchdogBytes = actualSentBytes;
+        if (this._watchdogStartTime === undefined) this._watchdogStartTime = now;
+        
+        const watchdogElapsed = (now - this._watchdogStartTime) / 1000;
+        
         if (this.status === 'TRANSFERRING' && buffered > 0) {
-          if (rollingSpeed < 1000) { // less than 1KB/s
-            this._zeroSpeedCount = (this._zeroSpeedCount || 0) + 1;
-          } else {
-            this._zeroSpeedCount = 0;
-    this._slowSpeedCount = 0;
-    this._forceRelayFallback = false;
-          }
-
-          if (this._zeroSpeedCount > 50) { // 50 ticks * 0.1s = 5 seconds
-            console.warn('[WebRTCTransport] STALL DETECTED! Forcing ICE Restart to find a better path.');
-            this._zeroSpeedCount = 0;
-    this._slowSpeedCount = 0;
-    this._forceRelayFallback = false;
-            this._attemptRecovery();
+          if (watchdogElapsed >= 15) { // Evaluate exactly every 15 seconds
+            const bytesSentInWindow = actualSentBytes - this._watchdogBytes;
+            const trueAverageSpeed = bytesSentInWindow / watchdogElapsed;
+            
+            if (trueAverageSpeed < 1000 * 1024) { // Less than 1 MB/s average over full 15s
+              console.warn('[WebRTCTransport] TRUE AVERAGE STALL DETECTED! Avg speed: ' + trueAverageSpeed + '/s. Forcing TCP/TLS Relay Fallback.');
+              
+              if (!this._forceRelayFallback) {
+                this._forceRelayFallback = true;
+                this._attemptRecovery();
+              } else {
+                this._attemptRecovery();
+              }
+            }
+            
+            // Reset window for next 15s block
+            this._watchdogStartTime = now;
+            this._watchdogBytes = actualSentBytes;
           }
         } else {
-          this._zeroSpeedCount = 0;
-    this._slowSpeedCount = 0;
-    this._forceRelayFallback = false;
+          // Reset window if not actively pushing against backpressure
+          this._watchdogStartTime = now;
+          this._watchdogBytes = actualSentBytes;
         }
+        // -----------------------------
 
-      const remainingBytes = this.progress.totalBytes - actualSentBytes;
+        const remainingBytes = this.progress.totalBytes - actualSentBytes;
       this.progress.eta = rollingSpeed > 0 ? remainingBytes / rollingSpeed : 0;
       
       this.progress.percentage = Math.min(100, Math.max(0, (actualSentBytes / this.progress.totalBytes) * 100));
