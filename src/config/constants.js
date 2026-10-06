@@ -7,8 +7,8 @@ export const WEBRTC_CHUNK_SIZE = 16384; // STRICTLY 16KB TO PREVENT UDP FRAGMENT
 
 // To prevent bufferbloat and SCTP congestion collapse, do not buffer 4MB in the OS.
 // Keep the high water mark around 512KB for a healthy pipeline.
-export const HIGH_WATER_MARK = 256 * 1024;
-export const LOW_WATER_MARK = 64 * 1024;
+export const HIGH_WATER_MARK = 4 * 1024 * 1024; // 4 MB
+export const LOW_WATER_MARK = 1 * 1024 * 1024; // 1 MB
 
 
 

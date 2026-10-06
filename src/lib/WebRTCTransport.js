@@ -960,7 +960,7 @@ signalingState=${this.peerConnection?.signalingState}\n`);
     const DYNAMIC_LOW_WATER_MARK = LOW_WATER_MARK || 128 * 1024;
     // MAX_IN_FLIGHT limits how far ahead of ACKs we can get.
     // 2MB is a reasonable WAN BDP window limit without choking the ACKs
-    const MAX_IN_FLIGHT = 2 * 1024 * 1024; 
+    const MAX_IN_FLIGHT = 8 * 1024 * 1024; 
 
     if (this.dataChannel) {
       this.dataChannel.bufferedAmountLowThreshold = DYNAMIC_LOW_WATER_MARK;
