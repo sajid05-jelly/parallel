@@ -29,6 +29,8 @@ export class WebRTCTransport {
     this.isTransferCancelled = false;
     this._stallWatchdog = null;
     this._zeroSpeedCount = 0;
+    this._slowSpeedCount = 0;
+    this._forceRelayFallback = false;
     this.isCompleted = false;
     this._manifestSent = false;
 
@@ -1205,15 +1207,21 @@ signalingState=${this.peerConnection?.signalingState}\n`);
             this._zeroSpeedCount = (this._zeroSpeedCount || 0) + 1;
           } else {
             this._zeroSpeedCount = 0;
+    this._slowSpeedCount = 0;
+    this._forceRelayFallback = false;
           }
 
           if (this._zeroSpeedCount > 50) { // 50 ticks * 0.1s = 5 seconds
             console.warn('[WebRTCTransport] STALL DETECTED! Forcing ICE Restart to find a better path.');
             this._zeroSpeedCount = 0;
+    this._slowSpeedCount = 0;
+    this._forceRelayFallback = false;
             this._attemptRecovery();
           }
         } else {
           this._zeroSpeedCount = 0;
+    this._slowSpeedCount = 0;
+    this._forceRelayFallback = false;
         }
 
       const remainingBytes = this.progress.totalBytes - actualSentBytes;
