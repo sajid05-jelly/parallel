@@ -262,7 +262,11 @@ signalingState=${sigState}\n`);
     this._outgoingIceQueue = [];
 
     this.peerConnection.onicecandidate = (event) => {
-      if (event.candidate && this.signaling) {
+        if (event.candidate && this.signaling) {
+          // In anywhere mode, we don't want host candidates
+          if (event.candidate.candidate.includes('typ host') && (!this.mode || this.mode === 'anywhere')) {
+             return;
+          }
         console.log('[ReceiverTransport] Sending ICE candidate to sender');
         this._outgoingIceQueue.push(event.candidate);
         this._flushOutgoingIceQueue();

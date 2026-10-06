@@ -272,7 +272,11 @@ export class WebRTCTransport {
 
     // Handle ICE Candidates
     this.peerConnection.onicecandidate = async (event) => {
-      if (event.candidate && this.signaling) {
+        if (event.candidate && this.signaling) {
+          // Drop host candidates in anywhere mode to prevent throttled IPv6 connections
+          if (this.mode === 'anywhere' && event.candidate.candidate.includes('typ host')) {
+            return;
+          }
         console.log('[WebRTCTransport] Generating ICE candidate...');
         this._outgoingIceQueue.push(event.candidate);
         this._flushOutgoingIceQueue();
