@@ -338,6 +338,10 @@ dataChannel=${this.dataChannel?.readyState}\n`);
             this._updateStatus('RECOVERING');
             this._recoveryStartTime = Date.now();
             this._startRecoveryWatchdog();
+          } else {
+            console.warn('[ReceiverTransport] ICE failed during negotiation. Failing transfer.');
+            this.onError(new Error('Connection failed. Sender may have closed the portal or network is unreachable.'));
+            this._updateStatus('FAILED');
           }
         }
       }

@@ -371,6 +371,11 @@ export class WebRTCTransport {
         if (this.isTransferCancelled || this.isCompleted) return;
         if (this.status === 'TRANSFERRING' || this.status === 'CONNECTED') {
           this._updateStatus('RECOVERING');
+        } else {
+          console.warn('[WebRTCTransport] ICE failed during negotiation. Failing transfer.');
+          this.onError(new Error('Connection failed. Check your network and try again.'));
+          this._updateStatus('FAILED');
+          return;
         }
         // Single recovery entry point
         this._attemptRecovery();
