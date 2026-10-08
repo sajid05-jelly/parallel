@@ -372,10 +372,9 @@ export class WebRTCTransport {
         if (this.status === 'TRANSFERRING' || this.status === 'CONNECTED') {
           this._updateStatus('RECOVERING');
         } else {
-          console.warn('[WebRTCTransport] ICE failed during negotiation. Failing transfer.');
-          this.onError(new Error('Connection failed. Check your network and try again.'));
-          this._updateStatus('FAILED');
-          return;
+          console.warn('[WebRTCTransport] ICE failed during initial negotiation. Strict network detected (e.g. College WiFi). Forcing TCP/Relay Fallback!');
+          this._forceRelayFallback = true;
+          this._updateStatus('RECOVERING');
         }
         // Single recovery entry point
         this._attemptRecovery();

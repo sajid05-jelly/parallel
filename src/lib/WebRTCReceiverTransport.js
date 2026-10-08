@@ -339,9 +339,10 @@ dataChannel=${this.dataChannel?.readyState}\n`);
             this._recoveryStartTime = Date.now();
             this._startRecoveryWatchdog();
           } else {
-            console.warn('[ReceiverTransport] ICE failed during negotiation. Failing transfer.');
-            this.onError(new Error('Connection failed. Sender may have closed the portal or network is unreachable.'));
-            this._updateStatus('FAILED');
+            console.warn('[ReceiverTransport] ICE failed during initial negotiation. Strict network detected (e.g. College WiFi). Waiting for Sender to force TCP/Relay Fallback.');
+            this._updateStatus('RECOVERING');
+            this._recoveryStartTime = Date.now();
+            this._startRecoveryWatchdog();
           }
         }
       }
